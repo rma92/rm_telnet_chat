@@ -23,10 +23,14 @@ typedef struct _SOCKET_INFORMATION
 {
   SOCKET Socket;
   OVERLAPPED Overlapped;
-  DWORD dwBytesSEND;
+  //DWORD dwBytesSEND;
   DWORD dwBytesRECV;
-  CHAR sBuffer[ DATA_BUFSIZE ];
-  WSABUF DataBuf;
+  CHAR sBufferIn[ DATA_BUFSIZE ];
+  CHAR sBufferSend[ DATA_BUFSIZE ];
+  DWORD dwBytesToSEND;
+  //CHAR sBufferOut[ DATA_BUFSIZE ];
+  WSABUF DataBufIn;
+  //WSABUF DataBufOut;
 } SOCKET_INFORMATION, *LPSOCKET_INFORMATION;
 
 /*
@@ -34,6 +38,9 @@ typedef struct _SOCKET_INFORMATION
 */
 BOOL CreateSocketInformation( SOCKET s );
 void FreeSocketInformation( DWORD dwIndex );
+void printAllBuffer();
+void queueMessage( int id, char * s, DWORD buf_len );
+void processIncomingMessage( int id );
 
 DWORD dwTotalSockets = 0;
 LPSOCKET_INFORMATION SocketArray[FD_SETSIZE];
@@ -122,15 +129,21 @@ int __cdecl srv( int iPort )
     //Set read and write notification based on buffers.
     for( i = 0; i < dwTotalSockets; ++i )
     {
-      if( SocketArray[ i ]->dwBytesRECV > SocketArray[ i ]->dwBytesSEND )
+      //if there is anything to write, we prepare to send.
+      //printf("Socket[%d] Bytes SenD: %d\n", i, SocketArray[ i ]->dwBytesSEND);
+      
+      if( (SocketArray[ i ]->dwBytesToSEND) > 0 )
       {
+        printf("bytes>0\n");
         FD_SET( SocketArray[ i ]->Socket, &writeSet );
       }
-      else
-      {
-        FD_SET( SocketArray[ i ]->Socket, &readSet );
-      }
+      
+      //always listen for incoming data
+      FD_SET( SocketArray[ i ]->Socket, &readSet );
+
     } //for( i = 0; i < dwTotalSockets; ++i )
+
+    printAllBuffer();
 
     if( (dwTotal = select( 0, &readSet, &writeSet, NULL, NULL ) )
         == SOCKET_ERROR )
@@ -195,13 +208,13 @@ int __cdecl srv( int iPort )
     {
       --dwTotal;
 
-      SocketInfo->DataBuf.buf = SocketInfo->sBuffer;
-      SocketInfo->DataBuf.len = DATA_BUFSIZE;
+      SocketInfo->DataBufIn.buf = SocketInfo->sBufferIn;
+      SocketInfo->DataBufIn.len = DATA_BUFSIZE;
 
       dwFlags = 0;
 
-      if( WSARecv( SocketInfo->Socket, &( SocketInfo->DataBuf ), 1, &dwRecvBytes, &dwFlags, NULL, NULL ) == SOCKET_ERROR )
-      {
+      if( WSARecv( SocketInfo->Socket, &( SocketInfo->DataBufIn ), 1, &dwRecvBytes, &dwFlags, NULL, NULL ) == SOCKET_ERROR )
+      {        
         if( WSAGetLastError() != WSAEWOULDBLOCK )
         {
           printf("WSARecv() failed with error %d\n", WSAGetLastError() );
@@ -214,7 +227,20 @@ int __cdecl srv( int iPort )
       }//if( WSARecv( ... ) != SOCKET_ERROR )
       else
       {
+        //socket success.
         SocketInfo->dwBytesRECV = dwRecvBytes;
+        
+        //do processing
+        processIncomingMessage( i );
+        /*
+        memset( SocketInfo->sBufferSend, 0, DATA_BUFSIZE );
+        sprintf( SocketInfo->sBufferSend, " You said: \"%s\"\n", SocketInfo->sBufferIn );
+        SocketInfo->dwBytesToSEND = strlen( SocketInfo->sBufferSend );
+        */
+
+        //clear the socket state
+        memset( SocketInfo->sBufferIn, 0, DATA_BUFSIZE );
+        SocketInfo->dwBytesRECV = 0;
 
         //if zero bytes, the peer closed the connection.
         if( dwRecvBytes == 0 )
@@ -224,14 +250,18 @@ int __cdecl srv( int iPort )
         }
       }
     }//if( FD_ISSET( SocketInfo->Socket, &readSet ) )
+
     if( FD_ISSET( SocketInfo->Socket, &writeSet ) )
     {
-      --dwTotal;
+      WSABUF DataBufOut;
+      DataBufOut.buf = SocketInfo->sBufferSend;
+      //DataBufOut.len = SocketInfo->dwBytesToSEND;
+      DataBufOut.len = (SocketInfo->dwBytesToSEND > 10)?10:SocketInfo->dwBytesToSEND;
+      dwSendBytes = 0;
+      //SocketInfo->DataBufOut.buf = SocketInfo->sBufferOut;
+      //SocketInfo->DataBufOut.len = SocketInfo->dwBytesSEND;
 
-      SocketInfo->DataBuf.buf = SocketInfo->sBuffer + SocketInfo->dwBytesSEND;
-      SocketInfo->DataBuf.len = SocketInfo->dwBytesRECV - SocketInfo->dwBytesSEND;
-
-      if( WSASend( SocketInfo->Socket, &( SocketInfo->DataBuf ), 1, &dwSendBytes, 0, NULL, NULL ) == SOCKET_ERROR )
+      if( WSASend( SocketInfo->Socket, &DataBufOut, 1, &dwSendBytes, 0, NULL, NULL ) == SOCKET_ERROR )
       {
         if( WSAGetLastError() != WSAEWOULDBLOCK )
         {
@@ -245,13 +275,23 @@ int __cdecl srv( int iPort )
       }// if( WSASend( ... ) != SOCKET_ERROR )
       else
       {
-        SocketInfo->dwBytesSEND += dwSendBytes;
-
-        if( SocketInfo->dwBytesSEND == SocketInfo->dwBytesRECV )
+        printf("WSASendBytes sent %d bytes.\n", dwSendBytes);
+        SocketInfo->dwBytesToSEND -= dwSendBytes;
+        printf("There remain %d bytes in the buffer for this socket.", SocketInfo->dwBytesToSEND);
+        //move the remaining buffer bytes up if the buffer wasn't sent.
+        if( SocketInfo->dwBytesToSEND > 0 )
         {
-          SocketInfo->dwBytesSEND = 0;
-          SocketInfo->dwBytesRECV = 0;
+          for( i = dwSendBytes; i < DATA_BUFSIZE; ++i )
+          {
+            SocketInfo->sBufferSend[ i - dwSendBytes ] = SocketInfo->sBufferSend[ i ];
+          }
         }
+        else
+        {
+          memset( SocketInfo->sBufferSend, 0, DATA_BUFSIZE );
+        }
+        //SocketInfo->dwBytesSEND -= dwSendBytes;
+
       }//else OF if( WSASend( ... ) != SOCKET_ERROR )
     }//if( FD_ISSET( SocketInfo->Socket, &writeSet ) )
   }//for( i = 0; dwTotal > 0 && i < dwTotalSockets; ++i )
@@ -281,7 +321,8 @@ BOOL CreateSocketInformation( SOCKET s )
 
   //Prepare SocketInfo structure.
   si->Socket = s;
-  si->dwBytesSEND = 0;
+  //si->dwBytesSEND = 0;
+  si->dwBytesToSEND = 0;
   si->dwBytesRECV = 0;
 
   SocketArray[ dwTotalSockets ] = si;
@@ -307,6 +348,55 @@ void FreeSocketInformation( DWORD dwIndex )
   }
 
   --dwTotalSockets;
+}//void FreeSocketInformation( DWORD dwIndex )
+
+void printAllBuffer()
+{
+  DWORD i;
+  
+  printf("--begin print all buffers--\n");
+  for( i = 0; i < dwTotalSockets; ++i )
+  {
+    printf("[%d] socket\nread(%d): %s %s\n",i, (int) (SocketArray[i]->dwBytesRECV), SocketArray[i]->DataBufIn.buf, SocketArray[i]->sBufferIn );
+    //SocketArray[i]->dwBytesSEND = 10;
+    //memcpy( SocketArray[i]->DataBufOut.buf, "abcdefghijklmnopqrstuvw", 10);
+    /*
+    printf("  [%d] socket\nin(%d): %s\n%s\nout(%d): %s\n%s\n", i,
+       SocketArray[i]->dwBytesRECV, SocketArray[i]->DataBufIn.buf, SocketArray[i]->sBufferIn,
+       SocketArray[i]->dwBytesSEND, SocketArray[i]->DataBufOut.buf, SocketArray[i]->sBufferOut);
+    SocketArray[i]->dwBytesSEND = 0;
+    */
+  }
+  printf("--end print all buffers--\n");
+
+}
+
+//prepares to send a message to a client.
+void queueMessage( int id, char * s, DWORD buf_len )
+{
+  printf("Queue message on [%d]. BytesToSend before: %d, Buf_len: %d\n", id, SocketArray[id]->dwBytesToSEND, buf_len );
+  if( SocketArray[id]->dwBytesToSEND + buf_len < DATA_BUFSIZE )
+  {    //only if it fits in buffer.
+    //sprintf( SocketArray[id]->sBufferSend + SocketArray[id]->dwBytesToSEND, "msg:\"%s\"\n", s );
+    memcpy( SocketArray[id]->sBufferSend + SocketArray[id]->dwBytesToSEND, s, buf_len );
+    SocketArray[id]->dwBytesToSEND += buf_len;
+  }
+  else
+  {
+    printf("The buffer is full.\n");
+    //TODO: Make a linked list queue for the messages.
+  }
+}
+
+//processes an incoming message.  Called after WSARecv occurs, parameter is the socket who's input
+//buffer contains the received message.
+void processIncomingMessage( int id )
+{
+  printf("Incoming Message on [%d]: %s\n", id, SocketArray[id]->sBufferIn );
+  queueMessage( id, "MSG:", 4);
+  queueMessage( id, SocketArray[id]->sBufferIn, strlen( SocketArray[id]->sBufferIn ) );
+  //memcpy( SocketArray[id]->DataBufOut.buf, st, strlen( st ) );
+  //SocketArray[id]->dwBytesSEND = 4;//strlen( st );
 }
 
 /*
