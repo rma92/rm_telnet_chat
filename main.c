@@ -405,7 +405,37 @@ void printAllBuffer()
       (int) (SocketArray[i]->dwBytesRECV), SocketArray[i]->DataBufIn.buf, SocketArray[i]->sBufferIn );
   }
   printf("--end print all buffers--\n");
+}
 
+/*
+  void debugShowIncomingBuffer( int id )
+
+  Debug function, prints the characters and IDs of sBufferIncomingMessage for
+    the SocketInformation in SocketArray specified by id.
+
+  Parameters:
+    int id
+      The ID of the SocketInformation
+  Returns:
+    void.
+*/
+void debugShowIncomingBuffer( int id )
+{
+  int i;
+  printf("[");
+  for( i = 0; i < DATA_BUFSIZE; ++i )
+  {
+    if( i != 0 )
+    {
+      printf(","); 
+    }
+    printf(" (%d)(%c) ", SocketArray[id]->sBufferIncomingMessage[i], SocketArray[id]->sBufferIncomingMessage[i]);
+    if( SocketArray[id]->sBufferIncomingMessage[i] == '\n' )
+    {
+      break;
+    }
+  }
+  printf("]\n");
 }
 
 /*
@@ -470,17 +500,10 @@ void processIncomingMessage( int id )
   
   sprintf(sUsernameOut, "%s:", SocketArray[id]->username );
 #ifdef RM_DBG_WSA
-  //debug character print for terminal issues
-  printf("[");
-  for( i = 0; i < DATA_BUFSIZE; ++i )
-  {
-    if( i != 0 ){ printf(","); }
-    printf(" (%d)(%c) ", SocketArray[id]->sBufferIncomingMessage[i], SocketArray[id]->sBufferIncomingMessage[i]);
-    if( SocketArray[id]->sBufferIncomingMessage[i] == '\n') break;
-  }
-  printf("]\n");
+  debugShowIncomingBuffer( id );
 #endif
-  if( SocketArray[id]->sBufferIn[0] == '/') 
+  //TODO: Terminal characters are not corrected for here.
+  if( SocketArray[id]->sBufferIn[0] == '/' ) 
   {
     queueMessage( id, "Command!\r\n", 9); 
   }
@@ -492,7 +515,7 @@ void processIncomingMessage( int id )
       queueMessage( i, sUsernameOut, strlen( sUsernameOut ) );
       if( SocketArray[id]->sBufferIncomingMessage[0] == ' ' && SocketArray[id]->sBufferIncomingMessage[1] == 0x27 )
       {
-        //correction for telnet terminal shit.
+        //correction for telnet terminal characters.
         queueMessage( i, SocketArray[id]->sBufferIncomingMessage+2, SocketArray[id]->dwIncomingMessageLength-2 );
       }
       else
