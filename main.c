@@ -243,7 +243,11 @@ int __cdecl srv( int iPort )
         //do processing
         for( k = 0; k < dwRecvBytes && SocketInfo->dwIncomingMessageLength < DATA_BUFSIZE; ++k )
         {
-          SocketInfo->sBufferIncomingMessage[ (SocketInfo->dwIncomingMessageLength)++ ] = SocketInfo->sBufferIn[k];
+          //filter terminal characters
+          if( SocketInfo->sBufferIn[k] >= 0x20 || SocketInfo->sBufferIn[k] == '\n' )
+          {
+            SocketInfo->sBufferIncomingMessage[ (SocketInfo->dwIncomingMessageLength)++ ] = SocketInfo->sBufferIn[k];
+          }
         }
         
         //if there is a new line, process the buffer.
@@ -466,6 +470,7 @@ void processIncomingMessage( int id )
   
   sprintf(sUsernameOut, "%s:", SocketArray[id]->username );
 #ifdef RM_DBG_WSA
+  //debug character print for terminal issues
   printf("[");
   for( i = 0; i < DATA_BUFSIZE; ++i )
   {
@@ -485,7 +490,16 @@ void processIncomingMessage( int id )
     {
       //TODO: implement room check.
       queueMessage( i, sUsernameOut, strlen( sUsernameOut ) );
-      queueMessage( i, SocketArray[id]->sBufferIncomingMessage, SocketArray[id]->dwIncomingMessageLength );
+      if( SocketArray[id]->sBufferIncomingMessage[0] == ' ' && SocketArray[id]->sBufferIncomingMessage[1] == 0x27 )
+      {
+        //correction for telnet terminal shit.
+        queueMessage( i, SocketArray[id]->sBufferIncomingMessage+2, SocketArray[id]->dwIncomingMessageLength-2 );
+      }
+      else
+      {
+        queueMessage( i, SocketArray[id]->sBufferIncomingMessage, SocketArray[id]->dwIncomingMessageLength );
+      }
+      queueMessage( i, "\r\n\0", 1);
     }
   }
 
