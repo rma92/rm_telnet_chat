@@ -41,7 +41,7 @@ typedef struct _SOCKET_INFORMATION
   OVERLAPPED Overlapped;
   DWORD dwBytesRECV;
   CHAR sBufferIn[ DATA_BUFSIZE ];
-  CHAR sBufferIncomingMessage[ DATA_BUFSIZE ];//temporarily hold the message.
+  CHAR sBufferIncomingMessage[ DATA_BUFSIZE ];//stage incoming message.
   DWORD dwIncomingMessageLength;
   CHAR sBufferSend[ DATA_BUFSIZE ];
   DWORD dwBytesToSEND;
@@ -87,19 +87,20 @@ int __cdecl srv( int iPort )
     printf( "WSAStartup() failed with error %d\n", ret );
     WSACleanup();
   }
-#ifdef RM_DBG_WSA
+  #ifdef RM_DBG_WSA
   printf( "WSAStartup() succeeded.\n" );
-#endif
+  #endif
 
-  if( (listenSocket = WSASocket( AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED ))
+  if( (listenSocket = 
+    WSASocket( AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED ))
     == INVALID_SOCKET )
   {
     printf( "WSASocket() failed with error %d\n", WSAGetLastError() );
     return 1;
   }
-#ifdef RM_DBG_WSA
+  #ifdef RM_DBG_WSA
   printf( "WSASocket() succeeded.\n" );
-#endif
+  #endif
 
   inetAddr.sin_family = AF_INET;
   inetAddr.sin_addr.s_addr = htonl( INADDR_ANY );
@@ -111,9 +112,9 @@ int __cdecl srv( int iPort )
     printf( "bind() failed with error %d\n", WSAGetLastError() );
   }
 
-#ifdef RM_DBG_WSA
+  #ifdef RM_DBG_WSA
   printf( "bind() succeeded.\n" );
-#endif
+  #endif
 
   if( listen( listenSocket, MAX_CONN ) )
   {
@@ -121,9 +122,9 @@ int __cdecl srv( int iPort )
     return 1;
   }
   
-#ifdef RM_DBG_WSA
+  #ifdef RM_DBG_WSA
   printf( "listen() succeeded.\n" );
-#endif
+  #endif
 
   //make the socket non-blocking
   iNonBlock = 1;
@@ -133,9 +134,9 @@ int __cdecl srv( int iPort )
     return 1;
   }
 
-#ifdef RM_DBG_WSA
+  #ifdef RM_DBG_WSA
   printf( "ioctlsocket() succeeded.\n" );
-#endif
+  #endif
 
   while( TRUE )
   {
@@ -158,9 +159,9 @@ int __cdecl srv( int iPort )
 
     } //for( i = 0; i < dwTotalSockets; ++i )
 
-#ifdef RM_DBG_WSA
+    #ifdef RM_DBG_WSA
     printAllBuffer();
-#endif
+    #endif
 
     if( ( dwTotal = select( 0, &readSet, &writeSet, NULL, NULL ) )
         == SOCKET_ERROR )
@@ -169,9 +170,9 @@ int __cdecl srv( int iPort )
       return 1;
     } //if( ... select( ... ) == SOCKET_ERROR )
 
-#ifdef RM_DBG_WSA
+    #ifdef RM_DBG_WSA
     printf( "select() succeeded.\n" );
-#endif
+    #endif
 
   if( FD_ISSET( listenSocket, &readSet ) )
   {
@@ -187,18 +188,18 @@ int __cdecl srv( int iPort )
           WSAGetLastError() );
         return 1;
       }
-#ifdef RM_DBG_WSA
+      #ifdef RM_DBG_WSA
       printf( "ioctlsocket( FIONBIO ) succeeded." );
-#endif
+      #endif
   
       if( CreateSocketInformation( acceptSocket ) == FALSE )
       {
         printf( "CreateSocketInformation() failed.\n");
         return 1;
       }
-#ifdef RM_DBG_WSA
+      #ifdef RM_DBG_WSA
       printf( "CreateSocketInformation() succeeded." );
-#endif
+      #endif
 
     } //if( ... accept( ... ) != INVALID_SOCKET )
     else
@@ -209,9 +210,9 @@ int __cdecl srv( int iPort )
         return 1;
       }
       
-#ifdef RM_DBG_WSA
+      #ifdef RM_DBG_WSA
       printf( "accept() succeeded." );
-#endif
+      #endif
     }//else for if( ... accept( ... ) != INVALID_SOCKET )
   }//if( FD_ISSET( listenSocket, &readSet ) )
 
@@ -238,9 +239,9 @@ int __cdecl srv( int iPort )
           printf("WSARecv() failed with error %d\n", WSAGetLastError() );
           FreeSocketInformation( i );
         }
-#ifdef RM_DBG_WSA
+        #ifdef RM_DBG_WSA
         printf( "WSARecv() succeeded." );
-#endif
+        #endif
         continue;
       }//if( WSARecv( ... ) != SOCKET_ERROR )
       else
@@ -258,19 +259,26 @@ int __cdecl srv( int iPort )
         
         //do processing
         for( k = 0; 
-            k < dwRecvBytes && SocketInfo->dwIncomingMessageLength < DATA_BUFSIZE;
+            k < dwRecvBytes 
+            && SocketInfo->dwIncomingMessageLength < DATA_BUFSIZE;
             ++k )
         {
           //filter terminal characters
-          if( SocketInfo->sBufferIn[ k ] >= 0x20 || SocketInfo->sBufferIn[ k ] == '\n' )
+          if( SocketInfo->sBufferIn[ k ] >= 0x20
+              || SocketInfo->sBufferIn[ k ] == '\n'
+            )
           {
-            SocketInfo->sBufferIncomingMessage[ ( SocketInfo->dwIncomingMessageLength )++ ]
+            SocketInfo->sBufferIncomingMessage
+                [ ( SocketInfo->dwIncomingMessageLength )++ ]
               = SocketInfo->sBufferIn[ k ];
           }
         }
         
         //if there is a new line, process the buffer.
-        if( SocketInfo->sBufferIncomingMessage[ SocketInfo->dwIncomingMessageLength - 1] == '\n')
+        if( SocketInfo->sBufferIncomingMessage
+            [ SocketInfo->dwIncomingMessageLength - 1]
+            == '\n'
+          )
         {
           processIncomingMessage( i );
         }
@@ -290,7 +298,15 @@ int __cdecl srv( int iPort )
       DataBufOut.len = SocketInfo->dwBytesToSEND;
       dwSendBytes = 0;
 
-      if( WSASend( SocketInfo->Socket, &DataBufOut, 1, &dwSendBytes, 0, NULL, NULL )
+      if( WSASend( 
+            SocketInfo->Socket, 
+            &DataBufOut, 
+            1, 
+            &dwSendBytes, 
+            0, 
+            NULL, 
+            NULL 
+            )
           == SOCKET_ERROR )
       {
         if( WSAGetLastError() != WSAEWOULDBLOCK )
@@ -357,7 +373,8 @@ BOOL CreateSocketInformation( SOCKET s )
   printf( "accepted socket number %d.\n", (int)s );
   #endif
 
-  if( (si = (LPSOCKET_INFORMATION) GlobalAlloc( GPTR, sizeof( SOCKET_INFORMATION ) ) )
+  if( ( si = 
+    (LPSOCKET_INFORMATION)GlobalAlloc(GPTR, sizeof(SOCKET_INFORMATION)) )
     == NULL )
   {
     printf( "GlobalAlloc() failed with error %d\n", GetLastError() );
