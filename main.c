@@ -22,6 +22,7 @@
     §[5.2] void debugShowIncomingBuffer( int id )
     §[5.3] void queueMessage( int id, char * s, DWORD buf_len )
     §[5.4] void processIncomingMessage( int id )
+    §[5.5] void queueWelcomeMessage( int id )
   §[ 99] Main
 */
 
@@ -58,6 +59,7 @@ void FreeSocketInformation( DWORD dwIndex );
 void printAllBuffer();
 void queueMessage( int id, char * s, DWORD buf_len );
 void processIncomingMessage( int id );
+void queueWelcomeMessage( int id );
 
 DWORD dwTotalSockets = 0;
 LPSOCKET_INFORMATION SocketArray[FD_SETSIZE];
@@ -200,6 +202,9 @@ int __cdecl srv( int iPort )
       #ifdef RM_DBG_WSA
       printf( "CreateSocketInformation() succeeded." );
       #endif
+      
+      //Make welcome message
+      queueWelcomeMessage( dwTotalSockets-1 );
 
     } //if( ... accept( ... ) != INVALID_SOCKET )
     else
@@ -390,7 +395,7 @@ BOOL CreateSocketInformation( SOCKET s )
   si->dwBytesToSEND = 0;
   si->dwBytesRECV = 0;
   si->dwIncomingMessageLength = 0;
-  sprintf( si->username, "user%d", dwTotalSockets );
+  sprintf( si->username, "guest%03d", dwTotalSockets );
   sprintf( si->room, "#global" );
 
   SocketArray[ dwTotalSockets ] = si;
@@ -601,6 +606,27 @@ void processIncomingMessage( int id )
   memset( SocketArray[ id ]->sBufferIncomingMessage, 0, DATA_BUFSIZE );
   SocketArray[ id ]->dwIncomingMessageLength = 0;
 } //void processIncomingMessage( int id )
+
+/*
+  §[5.5] void queueWelcomeMessage( int id )
+  
+  Generates the welcome message, and then posts it on the socket
+  specified.
+
+  Parameters:
+    int id
+      SocketArray index corresponding to the socket on which to send
+      the message.
+  Returns:
+    void
+*/
+
+void queueWelcomeMessage( int id )
+{
+  char buf[ DATA_BUFSIZE ];
+  snprintf(buf, sizeof( buf ), "Hi there.\r\n" );
+  queueMessage( id, buf, strlen( buf ) );
+}
 
 /*
   §[ 99] Main
