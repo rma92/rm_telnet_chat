@@ -395,8 +395,8 @@ BOOL CreateSocketInformation( SOCKET s )
   si->dwBytesToSEND = 0;
   si->dwBytesRECV = 0;
   si->dwIncomingMessageLength = 0;
-  sprintf( si->username, "guest%03d", dwTotalSockets );
-  sprintf( si->room, "#global" );
+  snprintf( si->username, sizeof( si->username), "guest%03d", dwTotalSockets );
+  snprintf( si->room, sizeof( si->room), "#global" );
 
   SocketArray[ dwTotalSockets ] = si;
   ++dwTotalSockets;
@@ -567,14 +567,64 @@ void processIncomingMessage( int id )
           SocketArray[ id ]->sBufferIncomingMessage
         );
   
-  sprintf( sUsernameOut, "%s:", SocketArray[ id ]->username );
+  snprintf( sUsernameOut, sizeof( sUsernameOut ), "%s:", SocketArray[ id ]->username );
   #ifdef RM_DBG_WSA
   debugShowIncomingBuffer( id );
   #endif
   //TODO: Terminal characters are not corrected for here.
   if( SocketArray[ id ]->sBufferIn[ 0 ] == '/' ) 
   {
-    queueMessage( id, "Command!\r\n", 9 ); 
+    char outBuf[ DATA_BUFSIZE ];
+    //To reduce processing, check if the first character is the same as that 
+    //of a valid the command.  Also provides shortcuts. 
+    if( SocketArray[ id ]->sBufferIn[ 1 ] == 'n' )
+    { 
+      char* x1 = strchr(SocketArray[ id ]->sBufferIn, ' ');
+      if( x1 - SocketArray[ id ]->sBufferIn > 3 )
+      {
+        int x2 = 0;
+        char temp[ USERNAME_MAX_LENGTH ];
+        memcpy( temp, x1+1, sizeof( temp) );
+
+        //put null-terminator at end.
+        for( x2 = 0; x2 < USERNAME_MAX_LENGTH - 2; ++x2 )
+        {
+          if( temp[x2] == ' ' || temp[x2] == '\r' || temp[x2] == '\n' )
+          {
+            temp[x2] = '\0';
+          }
+        }
+        if( x2 >= USERNAME_MAX_LENGTH - 1 )
+        {
+          temp[x2] = '\0';
+        }
+        
+        snprintf( SocketArray[ id ]->username, sizeof( SocketArray[ id ]->username ), "%s", temp );
+        snprintf( outBuf, sizeof( outBuf ), "Your nickname is now '%s' \r\n", temp );
+      }
+      else
+      {
+        snprintf( outBuf, sizeof( outBuf ), "nickname command invalid.\r\n" );
+      }
+    }
+    else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'r' )
+    {
+      snprintf( outBuf, sizeof( outBuf ), "register is not yet implemented.\r\n" );
+    }
+    else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'w' )
+    {
+      queueWelcomeMessage( id );
+      snprintf( outBuf, sizeof( outBuf ), "Welcome message was requested by /welcome.\r\n");
+    }
+    else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'h' )
+    {
+      snprintf( outBuf, sizeof( outBuf ), "The following commands are available:\r\n/help\r\n\tThis message.\r\n/nick <new_name> [<password>]\r\n\tChange your name.  Provide password if registered.\r\n/register <password>\r\n\tSave your name.  You cannot save a name beginning with \"guest\".\r\n/welcome\r\n\tSends you the welcome message.  See who is online, and your name.\r\n");
+    }
+    else
+    {
+      snprintf( outBuf, sizeof( outBuf ), "That command is invalid.\r\n" );
+    }
+    queueMessage( id, outBuf, strlen( outBuf ) );
   }
   else
   {
@@ -623,8 +673,14 @@ void processIncomingMessage( int id )
 
 void queueWelcomeMessage( int id )
 {
-  char buf[ DATA_BUFSIZE ];
-  snprintf(buf, sizeof( buf ), "Hi there.\r\n" );
+  DWORD i;
+  CHAR buf[ DATA_BUFSIZE ];
+  snprintf( buf, sizeof( buf ), "Welcome to chat!  You are currently known as \"%s\". The following %i users are online:\r\n[", SocketArray[i]->username, dwTotalSockets );
+  for( i = 0; i < dwTotalSockets; ++i )
+  {
+    snprintf( buf, sizeof( buf ), "%s%s%s", buf, (i==0)?"":", ", SocketArray[i]->username );
+  }
+  snprintf( buf, sizeof( buf ), "%s]\r\n", buf );
   queueMessage( id, buf, strlen( buf ) );
 }
 
