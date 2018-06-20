@@ -675,10 +675,19 @@ void queueWelcomeMessage( int id )
 {
   DWORD i;
   CHAR buf[ DATA_BUFSIZE ];
-  snprintf( buf, sizeof( buf ), "Welcome to chat!  You are currently known as \"%s\". The following %i users are online:\r\n[", SocketArray[i]->username, dwTotalSockets );
+  snprintf( buf, sizeof( buf ), 
+    "Welcome to chat!  You are currently known as \"%s\". %i users are online:\r\n[",
+    SocketArray[i]->username, dwTotalSockets 
+    );
   for( i = 0; i < dwTotalSockets; ++i )
   {
-    snprintf( buf, sizeof( buf ), "%s%s%s", buf, (i==0)?"":", ", SocketArray[i]->username );
+    snprintf( buf, 
+      sizeof( buf ), 
+      "%s%s%s", 
+      buf, 
+      (i==0)?"":", ", 
+      SocketArray[i]->username
+      );
   }
   snprintf( buf, sizeof( buf ), "%s]\r\n", buf );
   queueMessage( id, buf, strlen( buf ) );
