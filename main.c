@@ -677,7 +677,7 @@ void queueWelcomeMessage( int id )
   CHAR buf[ DATA_BUFSIZE ];
   snprintf( buf, sizeof( buf ), 
     "Welcome to chat!  You are currently known as \"%s\". %i users are online:\r\n[",
-    SocketArray[i]->username, dwTotalSockets 
+    SocketArray[id]->username, dwTotalSockets 
     );
   for( i = 0; i < dwTotalSockets; ++i )
   {
