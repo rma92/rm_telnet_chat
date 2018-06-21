@@ -1,5 +1,10 @@
-#include <winsock2.h>
-#include <windows.h>
+#if defined( _WIN32 ) && !defined( linux )
+  #include <winsock2.h>
+  #include <windows.h>
+#elif defined( linux ) && !defined( _WIN32 )
+  #include <sys/socket.h>
+  #include <unistd.h>
+#endif
 #include <stdio.h>
 
 #define DEF_PORT 27000
