@@ -186,6 +186,7 @@ int __cdecl srv( int iPort )
     if( ( acceptSocket = accept( listenSocket, NULL, NULL ) ) 
         != INVALID_SOCKET )
     {
+      char outBufAppear[ DATA_BUFSIZE ];
       iNonBlock = 1;
       if( ioctlsocket( acceptSocket, FIONBIO, &iNonBlock )
           == SOCKET_ERROR )
@@ -207,6 +208,10 @@ int __cdecl srv( int iPort )
       printf( "CreateSocketInformation() succeeded." );
       #endif
       
+      snprintf( outBufAppear, sizeof( outBufAppear ),
+                "User [%s] has joined!\r\n\0", 
+                SocketArray[ dwTotalSockets-1 ]->username );
+      broadcastMessage( outBufAppear, strlen( outBufAppear ) );
       //Make welcome message
       queueWelcomeMessage( dwTotalSockets-1 );
 
@@ -258,7 +263,12 @@ int __cdecl srv( int iPort )
         //if zero bytes, the peer closed the connection.
         if( dwRecvBytes == 0 )
         {
+          char outBufLeave[ DATA_BUFSIZE ];
+          snprintf( outBufLeave, sizeof( outBufLeave ), 
+                    "[%s] has left!\r\n\0",
+                    SocketInfo->username );
           FreeSocketInformation( i );
+          broadcastMessage( outBufLeave, strlen( outBufLeave ) );
           continue;
         }
 
@@ -542,7 +552,6 @@ void queueMessage( int id, char * s, DWORD dwBufLen )
   else
   {
     printf( "The buffer is full.\n" );
-    //TODO: Make a linked list queue for the messages.
   }
 } //void queueMessage( int id, char * s, DWORD buf_len )
 
@@ -600,6 +609,8 @@ void broadcastMessage( char* s, DWORD dwBufLen )
 void processIncomingMessage( int id )
 {
   int i, l;
+  char * ptr;
+  char outBuf[ DATA_BUFSIZE ];
   #ifdef RM_DBG_WSA
   printf( "Incoming Message on [%d]: %s\n", 
           id,
@@ -614,46 +625,23 @@ void processIncomingMessage( int id )
   }
   else
   {
-    char outBuf[ DATA_BUFSIZE ];
+    //use strtok to properly terminate strings, and in case multiple 
+    //messages appear in a single buffer.
+    ptr = strtok( SocketArray[ id ]->sBufferIncomingMessage, "\r\n" );
+    while( ptr != NULL )
     {
-      char* ptr = strtok( SocketArray[ id ]->sBufferIncomingMessage, " \r\n" );
-      while( ptr != NULL )
+      //terminal character corrections
+      if( ptr[ 0 ] == ' ' && ptr[ 1 ] == 0x27 )
       {
-        printf( "%s\n", ptr );
-        ptr = strtok( NULL, " \r\n" );
+        ptr += 2;
       }
-    }
-    //Correction for terminal characters.
-    //snprintf( outBuf, sizeof( outBuf ), "haha benis!" );
-    l = strlen( SocketArray[ id ]->sBufferIncomingMessage );
-    //null terminate the message appropriately.
-    for( i = 0; i < l; ++i )
-    {
-      if( SocketArray[ id ]->sBufferIncomingMessage[ i ] == '\n' 
-        || SocketArray[ id ]->sBufferIncomingMessage[ i ] == '\r' 
-        || SocketArray[ id ]->sBufferIncomingMessage[ i ] == '\0' )
-      {
-        SocketArray[ id ]->sBufferIncomingMessage[ i ] = '\0';
-        break;
-      }
-    }
+      snprintf( outBuf, sizeof( outBuf ), "%s:%s\r\n\0",
+                SocketArray[ id ]->username,
+                ptr );
+      broadcastMessage( outBuf, strlen( outBuf ) );
 
-    if( SocketArray[ id ]->sBufferIncomingMessage[0] == ' ' 
-        && SocketArray[ id ]->sBufferIncomingMessage[ 1 ] == 0x27 )
-    {
-      snprintf( outBuf, sizeof( outBuf ), "%s:%s\r\n\0",
-              SocketArray[ id ]->username, 
-              SocketArray[ id ]->sBufferIncomingMessage+2);
+      ptr = strtok( NULL, "\r\n" );
     }
-    else
-    {
-    
-      snprintf( outBuf, sizeof( outBuf ), "%s:%s\r\n\0",
-              SocketArray[ id ]->username, 
-              SocketArray[ id ]->sBufferIncomingMessage);
-    }
-    printf("OUTBUF:%s:\n", outBuf);
-    broadcastMessage( outBuf, strlen( outBuf ) );
   }
 
   //clear the message.
@@ -677,40 +665,59 @@ void processIncomingMessage( int id )
 void processIncomingMessageCommand( int id )
 {
   char outBuf[ DATA_BUFSIZE ];
+  char * ptr;
+  char * ptr2; 
+  int i;
   //To reduce processing, check if the first character is the same as that 
   //of a valid the command.  Also provides shortcuts. 
   if( SocketArray[ id ]->sBufferIn[ 1 ] == 'n' )
   { 
-    char* x1 = strchr(SocketArray[ id ]->sBufferIn, ' ');
-    if( x1 - SocketArray[ id ]->sBufferIn > 3 )
+    i = 0;
+    //use strtok to get the second parameter (name)
+    ptr = strtok( SocketArray[ id ]->sBufferIn, " \r\n\0" );    
+    while( ptr != NULL )
     {
-      int x2 = 0;
-      char temp[ USERNAME_MAX_LENGTH ];
-      memcpy( temp, x1+1, sizeof( temp) );
+      if( i == 1 ) ptr2 = ptr;
+      if( i == 2 ) break;
+      ptr = strtok ( NULL, " \r\n\0" );
+      ++i;
+    }
 
-      //put null-terminator at end.
-      for( x2 = 0; x2 < USERNAME_MAX_LENGTH - 2; ++x2 )
-      {
-        if( temp[x2] == ' ' || temp[x2] == '\r' || temp[x2] == '\n' )
-        {
-          temp[x2] = '\0';
-        }
-      }
-      if( x2 >= USERNAME_MAX_LENGTH - 1 )
-      {
-        temp[x2] = '\0';
-      }
-      
-      snprintf( SocketArray[ id ]->username, sizeof( SocketArray[ id ]->username ), "%s", temp );
-      snprintf( outBuf, sizeof( outBuf ), "Your nickname is now '%s' \r\n", temp );
+    if( i == 2 )
+    {
+      //There is a password provided
+      //TODO: Check if the name is registered with the password specified.
     }
     else
     {
-      snprintf( outBuf, sizeof( outBuf ), "nickname command invalid.\r\n" );
+      //TODO: Check if the name is registered and provide "" for the password.
     }
+    //borrow outBuf to send a broadcast message.
+    snprintf( outBuf, sizeof( outBuf ), 
+            "User [%s] is now known as [%s]!\r\n\0",
+            SocketArray[ id ]->username,
+            ptr2
+            );
+    broadcastMessage( outBuf, strlen( outBuf ) );
+    
+    snprintf( SocketArray[ id ]->username, sizeof( SocketArray[ id ]->username ), "%s", ptr2 );
+    snprintf( outBuf, sizeof( outBuf ), "Your nickname is now '%s' \r\n", ptr2 );
   }
   else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'r' )
   {
+    char * ptr2; 
+    //this will hold the first parameter, ptr will hold the second.
+    i = 0;
+    ptr = strtok( SocketArray[ id ]->sBufferIn, " \r\n\0" );
+    while( ptr != NULL )
+    {
+      if( i == 1 ) ptr2 = ptr;
+      if( i == 2 ) break;
+      ptr = strtok ( NULL, " \r\n\0" );
+      ++i;
+    }
+    //TODO: Call Register Function
+    printf(" Username: '%s' Password: '%s' ", ptr2, ptr );
     snprintf( outBuf, sizeof( outBuf ), "register is not yet implemented.\r\n" );
   }
   else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'w' )
@@ -763,7 +770,7 @@ void queueWelcomeMessage( int id )
   }
   snprintf( buf, sizeof( buf ), "%s]\r\n", buf );
   queueMessage( id, buf, strlen( buf ) );
-}
+} //void queueWelcomeMessage( int id )
 
 /*
   §[ 99] Main
