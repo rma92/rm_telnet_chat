@@ -21,8 +21,10 @@
     §[5.1] void printAllBuffer()
     §[5.2] void debugShowIncomingBuffer( int id )
     §[5.3] void queueMessage( int id, char * s, DWORD buf_len )
-    §[5.4] void processIncomingMessage( int id )
-    §[5.5] void queueWelcomeMessage( int id )
+    §[5.4] void broadcastMessage( char* s, DWORD dwBufLen )  
+    §[5.5] void processIncomingMessage( int id )
+    §[5.6] void processIncomingMessageCommand( int id )
+    §[5.7] void queueWelcomeMessage( int id )
   §[ 99] Main
 */
 
@@ -58,7 +60,9 @@ BOOL CreateSocketInformation( SOCKET s );
 void FreeSocketInformation( DWORD dwIndex );
 void printAllBuffer();
 void queueMessage( int id, char * s, DWORD buf_len );
+void broadcastMessage( char* s, DWORD dwBufLen );
 void processIncomingMessage( int id );
+void processIncomingMessageCommand( int id );
 void queueWelcomeMessage( int id );
 
 DWORD dwTotalSockets = 0;
@@ -543,113 +547,113 @@ void queueMessage( int id, char * s, DWORD dwBufLen )
 } //void queueMessage( int id, char * s, DWORD buf_len )
 
 /*
-  §[5.4] void processIncomingMessage( int id )
+  §[5.4] void broadcastMessage( char* s, DWORD dwBufLen )
+
+  Sends the specified string to all users.  Used to broadcast server events
+  as well as actual user messages.
+
+  FUTURE:  Any room handling functionality will be implemented by extending
+    and/or overloading this function.
+
+  Parameters:
+    char* s
+      The string to broadcast.
+    DWORD dwBufLen
+      The length of the string.
+  Returns:
+    void
+*/
+void broadcastMessage( char* s, DWORD dwBufLen )
+{
+  int i;
+  for( i = 0; i < dwTotalSockets; ++i )
+  {
+    queueMessage( i, s, dwBufLen );
+  }
+}
+
+/*
+  §[5.5] void processIncomingMessage( int id )
 
   Processes the contents of sBufferIncomingMessage for the 
   SocketInformation in the SocketArray specified by id.  Before calling
   this, it should be verified that it is time to send a message/command
   (e.g. that the last character in the buffer is a '\n'). 
 
-  If the message is a special command, this is handled.
+  If the message is a special command, this is handled by calling
+  processIncomingMessageCommand(int).
 
-  If the message is simply a message, it is sent to all other users.
+  If the message is simply a message, it is sent to all other users,
+  via broadcastMessage(char*, DWORD).
 
   The sBufferIncomingMessage is then cleared, and the
   dwIncomingMessageLength is set to 0.
+
+  Parameters:
+    int id
+      The id in SocketArray of the SOCKET_INFORMATION containing the 
+      message to be processed.
+  Returns:
+    void
 */
 
 void processIncomingMessage( int id )
 {
-  int i;
-  char sUsernameOut[ USERNAME_MAX_LENGTH + 50 ];
+  int i, l;
+  #ifdef RM_DBG_WSA
   printf( "Incoming Message on [%d]: %s\n", 
           id,
           SocketArray[ id ]->sBufferIncomingMessage
         );
-  
-  snprintf( sUsernameOut, sizeof( sUsernameOut ), "%s:", SocketArray[ id ]->username );
-  #ifdef RM_DBG_WSA
   debugShowIncomingBuffer( id );
   #endif
   //TODO: Terminal characters are not corrected for here.
   if( SocketArray[ id ]->sBufferIn[ 0 ] == '/' ) 
   {
-    char outBuf[ DATA_BUFSIZE ];
-    //To reduce processing, check if the first character is the same as that 
-    //of a valid the command.  Also provides shortcuts. 
-    if( SocketArray[ id ]->sBufferIn[ 1 ] == 'n' )
-    { 
-      char* x1 = strchr(SocketArray[ id ]->sBufferIn, ' ');
-      if( x1 - SocketArray[ id ]->sBufferIn > 3 )
-      {
-        int x2 = 0;
-        char temp[ USERNAME_MAX_LENGTH ];
-        memcpy( temp, x1+1, sizeof( temp) );
-
-        //put null-terminator at end.
-        for( x2 = 0; x2 < USERNAME_MAX_LENGTH - 2; ++x2 )
-        {
-          if( temp[x2] == ' ' || temp[x2] == '\r' || temp[x2] == '\n' )
-          {
-            temp[x2] = '\0';
-          }
-        }
-        if( x2 >= USERNAME_MAX_LENGTH - 1 )
-        {
-          temp[x2] = '\0';
-        }
-        
-        snprintf( SocketArray[ id ]->username, sizeof( SocketArray[ id ]->username ), "%s", temp );
-        snprintf( outBuf, sizeof( outBuf ), "Your nickname is now '%s' \r\n", temp );
-      }
-      else
-      {
-        snprintf( outBuf, sizeof( outBuf ), "nickname command invalid.\r\n" );
-      }
-    }
-    else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'r' )
-    {
-      snprintf( outBuf, sizeof( outBuf ), "register is not yet implemented.\r\n" );
-    }
-    else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'w' )
-    {
-      queueWelcomeMessage( id );
-      snprintf( outBuf, sizeof( outBuf ), "Welcome message was requested by /welcome.\r\n");
-    }
-    else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'h' )
-    {
-      snprintf( outBuf, sizeof( outBuf ), "The following commands are available:\r\n/help\r\n\tThis message.\r\n/nick <new_name> [<password>]\r\n\tChange your name.  Provide password if registered.\r\n/register <password>\r\n\tSave your name.  You cannot save a name beginning with \"guest\".\r\n/welcome\r\n\tSends you the welcome message.  See who is online, and your name.\r\n");
-    }
-    else
-    {
-      snprintf( outBuf, sizeof( outBuf ), "That command is invalid.\r\n" );
-    }
-    queueMessage( id, outBuf, strlen( outBuf ) );
+    processIncomingMessageCommand( id );
   }
   else
   {
-    for( i = 0; i < dwTotalSockets; ++i )
+    char outBuf[ DATA_BUFSIZE ];
     {
-      //TODO: implement room check.
-      queueMessage( i, sUsernameOut, strlen( sUsernameOut ) );
-      if( SocketArray[ id ]->sBufferIncomingMessage[0] == ' ' 
-          && SocketArray[ id ]->sBufferIncomingMessage[ 1 ] == 0x27 )
+      char* ptr = strtok( SocketArray[ id ]->sBufferIncomingMessage, " \r\n" );
+      while( ptr != NULL )
       {
-        //correction for telnet terminal characters.
-        queueMessage( i, 
-          SocketArray[ id ]->sBufferIncomingMessage + 2,
-          SocketArray[ id ]->dwIncomingMessageLength - 2
-          );
+        printf( "%s\n", ptr );
+        ptr = strtok( NULL, " \r\n" );
       }
-      else
+    }
+    //Correction for terminal characters.
+    //snprintf( outBuf, sizeof( outBuf ), "haha benis!" );
+    l = strlen( SocketArray[ id ]->sBufferIncomingMessage );
+    //null terminate the message appropriately.
+    for( i = 0; i < l; ++i )
+    {
+      if( SocketArray[ id ]->sBufferIncomingMessage[ i ] == '\n' 
+        || SocketArray[ id ]->sBufferIncomingMessage[ i ] == '\r' 
+        || SocketArray[ id ]->sBufferIncomingMessage[ i ] == '\0' )
       {
-        queueMessage( i, 
-          SocketArray[ id ]->sBufferIncomingMessage,
-          SocketArray[ id ]->dwIncomingMessageLength
-          );
+        SocketArray[ id ]->sBufferIncomingMessage[ i ] = '\0';
+        break;
       }
-      queueMessage( i, "\r\n\0", 1);
-    }//for( i = 0; i < dwTotalSockets; ++i )
+    }
+
+    if( SocketArray[ id ]->sBufferIncomingMessage[0] == ' ' 
+        && SocketArray[ id ]->sBufferIncomingMessage[ 1 ] == 0x27 )
+    {
+      snprintf( outBuf, sizeof( outBuf ), "%s:%s\r\n\0",
+              SocketArray[ id ]->username, 
+              SocketArray[ id ]->sBufferIncomingMessage+2);
+    }
+    else
+    {
+    
+      snprintf( outBuf, sizeof( outBuf ), "%s:%s\r\n\0",
+              SocketArray[ id ]->username, 
+              SocketArray[ id ]->sBufferIncomingMessage);
+    }
+    printf("OUTBUF:%s:\n", outBuf);
+    broadcastMessage( outBuf, strlen( outBuf ) );
   }
 
   //clear the message.
@@ -658,7 +662,75 @@ void processIncomingMessage( int id )
 } //void processIncomingMessage( int id )
 
 /*
-  §[5.5] void queueWelcomeMessage( int id )
+  §[5.6] void processIncomingMessageCommand( int id )
+
+  If the incoming message is a command (begins with '/') call this to deal
+  with the command.
+
+  Parameters:
+    int id
+      The ID of the socket information on which the incoming message to be
+      examined resides.
+  Returns:
+    void
+*/
+void processIncomingMessageCommand( int id )
+{
+  char outBuf[ DATA_BUFSIZE ];
+  //To reduce processing, check if the first character is the same as that 
+  //of a valid the command.  Also provides shortcuts. 
+  if( SocketArray[ id ]->sBufferIn[ 1 ] == 'n' )
+  { 
+    char* x1 = strchr(SocketArray[ id ]->sBufferIn, ' ');
+    if( x1 - SocketArray[ id ]->sBufferIn > 3 )
+    {
+      int x2 = 0;
+      char temp[ USERNAME_MAX_LENGTH ];
+      memcpy( temp, x1+1, sizeof( temp) );
+
+      //put null-terminator at end.
+      for( x2 = 0; x2 < USERNAME_MAX_LENGTH - 2; ++x2 )
+      {
+        if( temp[x2] == ' ' || temp[x2] == '\r' || temp[x2] == '\n' )
+        {
+          temp[x2] = '\0';
+        }
+      }
+      if( x2 >= USERNAME_MAX_LENGTH - 1 )
+      {
+        temp[x2] = '\0';
+      }
+      
+      snprintf( SocketArray[ id ]->username, sizeof( SocketArray[ id ]->username ), "%s", temp );
+      snprintf( outBuf, sizeof( outBuf ), "Your nickname is now '%s' \r\n", temp );
+    }
+    else
+    {
+      snprintf( outBuf, sizeof( outBuf ), "nickname command invalid.\r\n" );
+    }
+  }
+  else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'r' )
+  {
+    snprintf( outBuf, sizeof( outBuf ), "register is not yet implemented.\r\n" );
+  }
+  else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'w' )
+  {
+    queueWelcomeMessage( id );
+    snprintf( outBuf, sizeof( outBuf ), "Welcome message was requested by /welcome.\r\n");
+  }
+  else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'h' )
+  {
+    snprintf( outBuf, sizeof( outBuf ), "The following commands are available:\r\n/help\r\n\tThis message.\r\n/nick <new_name> [<password>]\r\n\tChange your name.  Provide password if registered.\r\n/register <password>\r\n\tSave your name.  You cannot save a name beginning with \"guest\".\r\n/welcome\r\n\tSends you the welcome message.  See who is online, and your name.\r\n");
+  }
+  else
+  {
+    snprintf( outBuf, sizeof( outBuf ), "That command is invalid.\r\n" );
+  }
+  queueMessage( id, outBuf, strlen( outBuf ) );
+} //void processIncomingMessageCommand( int id )
+
+/*
+  §[5.7] void queueWelcomeMessage( int id )
   
   Generates the welcome message, and then posts it on the socket
   specified.
