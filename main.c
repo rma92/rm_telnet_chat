@@ -31,7 +31,8 @@
   §[ 1 ] Structures
     §[1.1] SOCKET_INFORMATION
   §[ 2 ] Prototypes and Global Variables
-  §[ 3 ] Socket Server Function
+  §[ 3A] Socket Server Function - Windows
+  §[ 3B] Socket Server Function - POSIX
   §[ 4 ] Socket Helper Functions
     §[4.1] BOOL CreateSocketInformation( SOCKET s )
     §[4.2] void FreeSocketInformation( DWORD dwIndex )
@@ -103,8 +104,15 @@ DWORD dwTotalSockets = 0;
 int dwTotalSockets = 0;
 #endif
 
+/*
+  An array of SOCKET_INFORMATION structures is used on both systems.
+  However, on Windows, there is no 
+*/
+#if defined( RM_WIN32_SYSTEM )
 LPSOCKET_INFORMATION SocketArray[FD_SETSIZE];
-
+#elif defined( RM_POSIX_SYSTEM )
+  SOCKET_INFORMATION* SocketArray[FD_SETSIZE];
+#endif
 /*
   §[ 3A] Socket Server Function -- Windows
 */
@@ -466,15 +474,17 @@ int srv( int port )
   }
   */
 
-  //in the unix implementation, readSet will hold the list of sockets.
-  FD_ZERO( &readSet );
-
   while( 1 )
   {
     FD_ZERO( &writeSet );
+    FD_ZERO( &readSet );
     FD_SET( listenSocket, &readSet );
 
-
+    for( i = 0; i < dwTotalSockets; ++i )
+    {
+      //always read.
+      FD_SET( SocketArray[i]->Socket, &readSet );
+    }
     //TODO: Add sockets to array based on buffer.
 #ifdef RM_DBG_WSA
     printf("Select wait...\n");
@@ -509,8 +519,12 @@ int srv( int port )
           else
           {
             fprintf( stderr, "Server connect.\n");
-            //fprintf( stderr, "Server: connect from host %s, port %hd.\n",
-            // inet_ntoa( client_name.sin_addr), ntohs( client_name.sin_port ) );
+            if( CreateSocketInformation( acceptSocket ) == FALSE )
+            {
+              printf( "CreateSocketInformation() failed.\n");
+              return 1;
+            }
+
             //add to list
             FD_SET( acceptSocket, &readSet );
           }
