@@ -640,7 +640,7 @@ void processIncomingMessage( int id )
       {
         ptr += 2;
       }
-      snprintf( outBuf, sizeof( outBuf ), "%s:%s\r\n\0",
+      snprintf( outBuf, sizeof( outBuf ), "%s:%s\r\n",
                 SocketArray[ id ]->username,
                 ptr );
       broadcastMessage( outBuf, strlen( outBuf ) );
