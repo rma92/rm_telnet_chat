@@ -222,10 +222,6 @@ int __cdecl srv( int iPort )
       return 1;
     } //if( ... select( ... ) == SOCKET_ERROR )
 
-    #ifdef RM_DBG_WSA
-    printf( "select() succeeded.\n" );
-    #endif
-
   if( FD_ISSET( listenSocket, &readSet ) )
   {
     --dwTotal;
@@ -255,7 +251,7 @@ int __cdecl srv( int iPort )
       #endif
       
       snprintf( outBufAppear, sizeof( outBufAppear ),
-                "User [%s] has joined!\r\n\0", 
+                "User [%s] has joined!\r\n", 
                 SocketArray[ dwTotalSockets-1 ]->username );
       broadcastMessage( outBufAppear, strlen( outBufAppear ) );
       //Make welcome message
@@ -311,7 +307,7 @@ int __cdecl srv( int iPort )
         {
           char outBufLeave[ DATA_BUFSIZE ];
           snprintf( outBufLeave, sizeof( outBufLeave ), 
-                    "[%s] has left!\r\n\0",
+                    "[%s] has left!\r\n",
                     SocketInfo->username );
           FreeSocketInformation( i );
           broadcastMessage( outBufLeave, strlen( outBufLeave ) );
@@ -379,25 +375,25 @@ int __cdecl srv( int iPort )
           printf( "WSASend() failed with error %d.\n", WSAGetLastError() );
           FreeSocketInformation( i );
         }
-        #ifdef RM_DBG_WSA
-        printf( "WSASend() succeeded." );
-        #endif
-
         continue;
       }//if( WSASend( ... ) != SOCKET_ERROR )
       else
       {
         //WSASend Success
+        #ifdef RM_DBG_WSA
+        printf( "WSASend() succeeded." );
+        #endif
+
         SocketInfo->dwBytesToSEND -= dwSendBytes;
         printf( "WSASendBytes sent %d bytes, %d bytes left.\n",
               dwSendBytes, SocketInfo->dwBytesToSEND );
         //move the remaining buffer bytes up if the buffer wasn't sent.
         if( SocketInfo->dwBytesToSEND > 0 )
         {
-          for( i = dwSendBytes; i < DATA_BUFSIZE; ++i )
+          for( k = dwSendBytes; k < DATA_BUFSIZE; ++k )
           {
-            SocketInfo->sBufferSend[ i - dwSendBytes ] 
-              = SocketInfo->sBufferSend[ i ];
+            SocketInfo->sBufferSend[ k - dwSendBytes ] 
+              = SocketInfo->sBufferSend[ k ];
           }
         }
         else
@@ -428,11 +424,11 @@ int srv( int port )
   fd_set readSet;
   int i;
   int k;
-  int dwTotal;
   unsigned long iNonBlock;
   int dwFlags;
   int dwSendBytes;
   int dwRecvBytes;
+  int dwTotal;
 
   listenSocket = socket( PF_INET, SOCK_STREAM, 0 );
   if( listenSocket < 0 )
@@ -471,18 +467,25 @@ int srv( int port )
   {
     FD_ZERO( &writeSet );
     FD_ZERO( &readSet );
+
+    //always check for connection attempts.
     FD_SET( listenSocket, &readSet );
 
+    //Set read and write notification based on buffers.
     for( i = 0; i < dwTotalSockets; ++i )
     {
-      //always read.
-      FD_SET( SocketArray[i]->Socket, &readSet );
+      if( ( SocketArray[ i ]->dwBytesToSEND ) > 0 )
+      {
+        FD_SET( SocketArray[ i ]->Socket, &writeSet );
+      }
+
+      //always listen for incoming data.
+      FD_SET( SocketArray[ i ]->Socket, &readSet );
     }
-    //TODO: Add sockets to array based on buffer.
 #ifdef RM_DBG_WSA
     printf("Select wait...\n");
 #endif
-    if( select( FD_SETSIZE, &readSet, &writeSet, NULL, NULL ) < 0 )
+    if( (dwTotal = select( FD_SETSIZE, &readSet, &writeSet, NULL, NULL )) < 0 )
     {
       perror( "Select errored.\n" );
       return 1;
@@ -493,16 +496,16 @@ int srv( int port )
     //service sockets
     if( FD_ISSET( listenSocket, &readSet ) )
     {
-      printf("Accept\n");
       //new connection
       int size;
       struct sockaddr_in client_name;
+      char outBufAppear[ DATA_BUFSIZE ];
+      --dwTotal;
       size = sizeof( client_name );
       acceptSocket = accept( listenSocket, (struct sockaddr*) &client_name, &size );
       if( acceptSocket < 0 )
       {
         perror( "failed to accept socket. ");
-        continue;
       }
       else
       {
@@ -510,38 +513,45 @@ int srv( int port )
         if( CreateSocketInformation( acceptSocket ) == FALSE )
         {
           printf( "CreateSocketInformation() failed.\n");
-          return 1;
+          return 1; //this is a critical failure.
         }
-
-        //add to list
-        FD_SET( acceptSocket, &readSet );
-      }
+        
+        snprintf( outBufAppear, sizeof( outBufAppear ),
+                  "User [%s] has joined!\r\n", 
+                  SocketArray[ dwTotalSockets-1 ]->username );
+        broadcastMessage( outBufAppear, strlen( outBufAppear ) );
+        //Make welcome message
+        queueWelcomeMessage( dwTotalSockets-1 );
+      }//else for acceptSocket failed.
     }//if (FD_ISSET (listenSocket, &readSet) )
 
     //Now iterate over other sockets.
-    for( i = 0; i < dwTotalSockets; ++i )
+    for( i = 0; dwTotal > 0 && i < dwTotalSockets; ++i )
     {
-      if( FD_ISSET( SocketArray[i]->Socket, &readSet ) )
+      SOCKET_INFORMATION* SocketInfo = SocketArray[ i ];
+      if( FD_ISSET( SocketInfo->Socket, &readSet ) )
       {
+        --dwTotal;
         char buffer[DATA_BUFSIZE];
         char* t2;
         int nbytes;
         printf("Read\n");
         memset( buffer, 0, DATA_BUFSIZE );
-        nbytes = read( SocketArray[i]->Socket, buffer, DATA_BUFSIZE );
+        nbytes = read( SocketInfo->Socket, buffer, DATA_BUFSIZE );
 
         if( nbytes < 0 )
         {
           fprintf( stderr, "Read Error on Socket %d\n", i );
-          close( SocketArray[i]->Socket );
+          close( SocketInfo->Socket );
           //TODO: Delete the SI
           //FD_CLR( i->Socket, &readSet );
           FreeSocketInformation( i );
         }
         else if ( nbytes == 0 )
         {
+          //if zero bytes, the peer closed the connection.
           fprintf( stderr, "EOF on %d, closing connection.\n", i );
-          close( SocketArray[i]->Socket );
+          close( SocketInfo->Socket );
           //TODO: Delete the SI.
           FreeSocketInformation( i );
         }
@@ -552,8 +562,39 @@ int srv( int port )
           fprintf( stderr, "Server: got message `%s'\n", buffer );
         }
       }//if( FD_ISSET( i, &readSet ) );
+
+      if( FD_ISSET( SocketInfo->Socket, &writeSet ) )
+      {
+        --dwTotal;
+        if( ( dwSendBytes = send( SocketInfo->Socket, SocketInfo->sBufferSend, SocketInfo->dwBytesToSEND, 0 ) ) == -1 )
+        {
+          //failure
+          printf("send on socket for channel %d failed.\n", i );
+          FreeSocketInformation( i );
+        }
+        else
+        {//send success
+          SocketInfo->dwBytesToSEND -= dwSendBytes;
+          printf("Sent %d bytes, %d bytes left.\n", 
+                dwSendBytes, SocketInfo->dwBytesToSEND );
+
+          //move the remaining buffer bytes up if the buffer wasn't sent.
+          if( SocketInfo->dwBytesToSEND > 0 )
+          {
+            for( k = dwSendBytes; k < DATA_BUFSIZE; ++k )
+            {
+              SocketInfo->sBufferSend[ k - dwSendBytes ] 
+                = SocketInfo->sBufferSend[ k ];
+            }
+          }
+          else
+          {
+            //if the buffer is empty, clear it for good measure.
+            memset( SocketInfo->sBufferSend, 0, DATA_BUFSIZE );
+          }
+        }//else OF if( send( ... ) == -! ) / send success
+      }//if( FD_ISSET( SocketInfo->Socket, &writeSet ) )
     }//for( i = 0; i < dwTotalSockets; ++i )
-    continue;
   }//while( 1 )
   return 0;
 }//int srv( int port ) (unix)
