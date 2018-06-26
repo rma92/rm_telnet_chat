@@ -295,9 +295,6 @@ int __cdecl srv( int iPort )
           printf("WSARecv() failed with error %d\n", WSAGetLastError() );
           FreeSocketInformation( i );
         }
-        #ifdef RM_DBG_WSA
-        printf( "WSARecv() succeeded." );
-        #endif
         continue;
       }//if( WSARecv( ... ) != SOCKET_ERROR )
       else
@@ -532,34 +529,40 @@ int srv( int port )
       if( FD_ISSET( SocketInfo->Socket, &readSet ) )
       {
         --dwTotal;
-        char buffer[DATA_BUFSIZE];
         char* t2;
         int nbytes;
         printf("Read\n");
-        memset( buffer, 0, DATA_BUFSIZE );
-        nbytes = read( SocketInfo->Socket, buffer, DATA_BUFSIZE );
+        memset( SocketInfo->sBufferIn, 0, DATA_BUFSIZE );
+        nbytes = read( SocketInfo->Socket, SocketInfo->sBufferIn, DATA_BUFSIZE );
 
         if( nbytes < 0 )
         {
+          char outBufLeave[ DATA_BUFSIZE ];
           fprintf( stderr, "Read Error on Socket %d\n", i );
-          close( SocketInfo->Socket );
-          //TODO: Delete the SI
-          //FD_CLR( i->Socket, &readSet );
+          //close( SocketInfo->Socket );
+          snprintf( outBufLeave, sizeof( outBufLeave ), 
+                    "[%s] has left!\r\n",
+                    SocketInfo->username );
           FreeSocketInformation( i );
+          //broadcastMessage( outBufLeave, strlen( outBufLeave ) );
         }
         else if ( nbytes == 0 )
         {
+          char outBufLeave[ DATA_BUFSIZE ];
           //if zero bytes, the peer closed the connection.
           fprintf( stderr, "EOF on %d, closing connection.\n", i );
-          close( SocketInfo->Socket );
-          //TODO: Delete the SI.
+          //close( SocketInfo->Socket );
+          snprintf( outBufLeave, sizeof( outBufLeave ), 
+                    "[%s] has left!\r\n",
+                    SocketInfo->username );
           FreeSocketInformation( i );
+          //broadcastMessage( outBufLeave, strlen( outBufLeave ) );
         }
         else
         {
           //use strtok to terminate message properly.
-          t2 = strtok(buffer, "\r\n");
-          fprintf( stderr, "Server: got message `%s'\n", buffer );
+          t2 = strtok( SocketInfo->sBufferIn , "\r\n");
+          fprintf( stderr, "Server: got message `%s'\n", SocketInfo->sBufferIn );
         }
       }//if( FD_ISSET( i, &readSet ) );
 
@@ -946,7 +949,7 @@ void processIncomingMessageCommand( int id )
     }
     //borrow outBuf to send a broadcast message.
     snprintf( outBuf, sizeof( outBuf ), 
-            "User [%s] is now known as [%s]!\r\n\0",
+            "User [%s] is now known as [%s]!\r\n",
             SocketArray[ id ]->username,
             ptr2
             );
