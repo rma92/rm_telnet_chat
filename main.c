@@ -315,13 +315,13 @@ int __cdecl srv( int iPort )
         //socket success.
         SocketInfo->dwBytesRECV = dwRecvBytes;
         
-        //do processing
+        //Do processing.
         for( k = 0; 
             k < dwRecvBytes 
             && SocketInfo->dwIncomingMessageLength < DATA_BUFSIZE;
             ++k )
         {
-          //filter terminal characters
+          //Filter terminal characters.
           if( SocketInfo->sBufferIn[ k ] >= 0x20
               || SocketInfo->sBufferIn[ k ] == '\n'
             )
@@ -332,7 +332,7 @@ int __cdecl srv( int iPort )
           }
         }
         
-        //if there is a new line, process the buffer.
+        //If there is a new line, process the buffer.
         if( SocketInfo->sBufferIncomingMessage
             [ SocketInfo->dwIncomingMessageLength - 1]
             == '\n'
@@ -341,7 +341,7 @@ int __cdecl srv( int iPort )
           processIncomingMessage( i );
         }
 
-        //clear the socket state
+        //Clear the socket state.
         memset( SocketInfo->sBufferIn, 0, DATA_BUFSIZE );
         SocketInfo->dwBytesRECV = 0;
       }
@@ -424,7 +424,6 @@ int srv( int port )
   unsigned long iNonBlock;
   int dwFlags;
   int dwSendBytes;
-  int dwRecvBytes;
   int dwTotal;
 
   listenSocket = socket( PF_INET, SOCK_STREAM, 0 );
@@ -530,12 +529,11 @@ int srv( int port )
       {
         --dwTotal;
         char* t2;
-        int nbytes;
         printf("Read\n");
         memset( SocketInfo->sBufferIn, 0, DATA_BUFSIZE );
-        nbytes = read( SocketInfo->Socket, SocketInfo->sBufferIn, DATA_BUFSIZE );
+        SocketInfo->dwBytesRECV = read( SocketInfo->Socket, SocketInfo->sBufferIn, DATA_BUFSIZE );
 
-        if( nbytes < 0 )
+        if( SocketInfo->dwBytesRECV < 0 )
         {
           char outBufLeave[ DATA_BUFSIZE ];
           fprintf( stderr, "Read Error on Socket %d\n", i );
@@ -544,9 +542,9 @@ int srv( int port )
                     "[%s] has left!\r\n",
                     SocketInfo->username );
           FreeSocketInformation( i );
-          //broadcastMessage( outBufLeave, strlen( outBufLeave ) );
+          broadcastMessage( outBufLeave, strlen( outBufLeave ) );
         }
-        else if ( nbytes == 0 )
+        else if ( SocketInfo->dwBytesRECV == 0 )
         {
           char outBufLeave[ DATA_BUFSIZE ];
           //if zero bytes, the peer closed the connection.
@@ -556,13 +554,38 @@ int srv( int port )
                     "[%s] has left!\r\n",
                     SocketInfo->username );
           FreeSocketInformation( i );
-          //broadcastMessage( outBufLeave, strlen( outBufLeave ) );
+          broadcastMessage( outBufLeave, strlen( outBufLeave ) );
         }
         else
         {
-          //use strtok to terminate message properly.
-          t2 = strtok( SocketInfo->sBufferIn , "\r\n");
-          fprintf( stderr, "Server: got message `%s'\n", SocketInfo->sBufferIn );
+          //Do processing.
+          for( k = 0; k < SocketInfo->dwBytesRECV 
+              && SocketInfo->dwIncomingMessageLength < DATA_BUFSIZE;
+              ++k )
+          {
+            //Filter terminal characters.
+            if( SocketInfo->sBufferIn[ k ] >= 0x20
+                || SocketInfo->sBufferIn[ k ] == '\n' 
+              )
+            {
+              SocketInfo->sBufferIncomingMessage
+                  [ ( SocketInfo->dwIncomingMessageLength )++ ]
+                = SocketInfo->sBufferIn[ k ];
+            }
+          }
+          
+          //If there is a new line, process the buffer.
+          if( SocketInfo->sBufferIncomingMessage
+              [ SocketInfo->dwIncomingMessageLength - 1 ]
+              == '\n' 
+            )
+          {
+            processIncomingMessage( i );
+          }
+
+          //Clear the socket state.
+          memset( SocketInfo->sBufferIn, 0, DATA_BUFSIZE );
+          SocketInfo->dwBytesRECV = 0;
         }
       }//if( FD_ISSET( i, &readSet ) );
 
@@ -1007,23 +1030,22 @@ void processIncomingMessageCommand( int id )
 
 void queueWelcomeMessage( int id )
 {
-  DWORD i;
-  CHAR buf[ DATA_BUFSIZE ];
+  int i;
+  char buf[ DATA_BUFSIZE ];
   snprintf( buf, sizeof( buf ), 
     "Welcome to chat!  You are currently known as \"%s\". %i users are online:\r\n[",
     SocketArray[id]->username, dwTotalSockets 
     );
   for( i = 0; i < dwTotalSockets; ++i )
   {
-    snprintf( buf, 
-      sizeof( buf ), 
-      "%s%s%s", 
-      buf, 
-      (i==0)?"":", ", 
-      SocketArray[i]->username
-      );
+    if( i != 0 )
+    {
+      strcat( buf, ", " );
+    }
+    strcat( buf, SocketArray[i]->username );
   }
-  snprintf( buf, sizeof( buf ), "%s]\r\n", buf );
+  strcat( buf, "]\r\n" );
+printf("Welcome:$$%s$$\n", buf );
   queueMessage( id, buf, strlen( buf ) );
 } //void queueWelcomeMessage( int id )
 
