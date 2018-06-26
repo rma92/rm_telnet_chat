@@ -1,9 +1,22 @@
 #if defined( _WIN32 ) && !defined( linux )
+  #define RM_WIN32_SYSTEM
   #include <winsock2.h>
   #include <windows.h>
 #elif defined( linux ) && !defined( _WIN32 )
+  #define RM_POSIX_SYSTEM
+  #include <sys/time.h>
+  #include <sys/types.h>
+  #include <string.h>
   #include <sys/socket.h>
+  #include <netinet/in.h>
   #include <unistd.h>
+  #include <malloc.h>
+  typedef int SOCKET;
+  typedef unsigned long DWORD;
+  typedef char CHAR;
+  typedef int BOOL;
+  #define FALSE 0
+  #define TRUE 1
 #endif
 #include <stdio.h>
 
@@ -43,6 +56,7 @@
   A structure to contain data about a socket, it's buffers, and the 
   user in the session (e.g. user nickname).
 */
+#if defined( RM_WIN32_SYSTEM )
 typedef struct _SOCKET_INFORMATION
 {
   SOCKET Socket;
@@ -57,11 +71,24 @@ typedef struct _SOCKET_INFORMATION
   CHAR room[ DATA_BUFSIZE ];  //list of rooms a user is in.
   WSABUF DataBufIn;
 } SOCKET_INFORMATION, *LPSOCKET_INFORMATION;
-
+#elif defined( RM_POSIX_SYSTEM )
+typedef struct _SOCKET_INFORMATION
+{
+  int Socket;
+  int dwBytesRECV;
+  char sBufferIn[ DATA_BUFSIZE ];
+  char sBufferIncomingMessage[ DATA_BUFSIZE ];
+  int dwIncomingMessageLength;
+  char sBufferSend[ DATA_BUFSIZE ];
+  int dwBytesToSEND;
+  char username[ USERNAME_MAX_LENGTH ];
+  char room[ DATA_BUFSIZE ]; //list of rooms a user is in, not yet used.
+} SOCKET_INFORMATION, *LPSOCKET_INFORMATION;
+#endif
 /*
   §[ 2 ] Prototypes and Global Variables
 */
-BOOL CreateSocketInformation( SOCKET s );
+int CreateSocketInformation( SOCKET s );
 void FreeSocketInformation( DWORD dwIndex );
 void printAllBuffer();
 void queueMessage( int id, char * s, DWORD buf_len );
@@ -70,12 +97,18 @@ void processIncomingMessage( int id );
 void processIncomingMessageCommand( int id );
 void queueWelcomeMessage( int id );
 
+#if defined( RM_WIN32_SYSTEM )
 DWORD dwTotalSockets = 0;
+#elif defined( RM_POSIX_SYSTEM )
+int dwTotalSockets = 0;
+#endif
+
 LPSOCKET_INFORMATION SocketArray[FD_SETSIZE];
 
 /*
-  §[ 3 ] Socket Server Function
+  §[ 3A] Socket Server Function -- Windows
 */
+#if defined( RM_WIN32_SYSTEM )
 int __cdecl srv( int iPort )
 {
   SOCKET listenSocket;
@@ -374,10 +407,154 @@ int __cdecl srv( int iPort )
 }//int __cdecl srv( int iPort )
 
 /*
+  §[ 3B] Socket Server Function -- POSIX
+*/
+#elif defined( RM_POSIX_SYSTEM )
+
+int srv( int port )
+{
+  int listenSocket;
+  int acceptSocket;
+  struct sockaddr_in inetAddr;
+  fd_set writeSet;
+  fd_set readSet;
+  int i;
+  int k;
+  int dwTotal;
+  unsigned long iNonBlock;
+  int dwFlags;
+  int dwSendBytes;
+  int dwRecvBytes;
+
+  listenSocket = socket( PF_INET, SOCK_STREAM, 0 );
+  if( listenSocket < 0 )
+  {
+    perror( "socket error on create.\n" );
+    return 1;
+  }
+
+#ifdef RM_DBG_WSA
+  printf("socket create is okay!\n");
+#endif
+  inetAddr.sin_family = AF_INET;
+  inetAddr.sin_addr.s_addr = htonl( INADDR_ANY );
+  inetAddr.sin_port = htons( port );
+
+  if( bind( listenSocket, (struct sockaddr *) &inetAddr, sizeof (inetAddr)) < 0 )
+  {
+    perror( "bind failed on listening socket.\n" );
+    return 1;
+  }
+#ifdef RM_DBG_WSA
+  printf("bind is okay!\n");
+#endif
+ 
+  if( listen( listenSocket, MAX_CONN ) < 0 )
+  {
+    perror( "Listen failed.\n");
+    return 1;
+  }
+
+#ifdef RM_DBG_WSA
+  printf("Listen is okay!\n");
+#endif
+  /*
+  iNonBlock = 1;
+  if( ioctl( listenSocket, FIONBIO, &iNonBlock ) )
+  {
+    
+  }
+  */
+
+  //in the unix implementation, readSet will hold the list of sockets.
+  FD_ZERO( &readSet );
+
+  while( 1 )
+  {
+    FD_ZERO( &writeSet );
+    FD_SET( listenSocket, &readSet );
+
+
+    //TODO: Add sockets to array based on buffer.
+#ifdef RM_DBG_WSA
+    printf("Select wait...\n");
+#endif
+    if( select( FD_SETSIZE, &readSet, &writeSet, NULL, NULL ) < 0 )
+    {
+      perror( "Select errored.\n" );
+      return 1;
+    }
+  #ifdef RM_DBG_WSA
+    printf("Select went...\n");
+  #endif
+    //service sockets
+    for( i = 0; i < FD_SETSIZE; ++i )
+    {
+      if( FD_ISSET( i, &readSet ) )
+      {
+        printf("%d is in readset\n", i);
+        if( i == listenSocket )
+        {
+          printf("Accept\n");
+          //new connection
+          int size;
+          struct sockaddr_in client_name;
+          size = sizeof( client_name );
+          acceptSocket = accept( listenSocket, (struct sockaddr*) &client_name, &size );
+          if( acceptSocket < 0 )
+          {
+            perror( "failed to accept socket. ");
+            continue;
+          }
+          else
+          {
+            fprintf( stderr, "Server connect.\n");
+            //fprintf( stderr, "Server: connect from host %s, port %hd.\n",
+            // inet_ntoa( client_name.sin_addr), ntohs( client_name.sin_port ) );
+            //add to list
+            FD_SET( acceptSocket, &readSet );
+          }
+        }//if i == listenSocket
+        else
+        {
+          char buffer[DATA_BUFSIZE];
+          char* t2;
+          int nbytes;
+          printf("Read\n");
+          memset( buffer, 0, DATA_BUFSIZE );
+          nbytes = read( i, buffer, DATA_BUFSIZE );
+
+          if( nbytes < 0 )
+          {
+            fprintf( stderr, "Read Error on Socket %d\n", i );
+            close( i );
+            FD_CLR( i, &readSet );
+          }
+          else if ( nbytes == 0 )
+          {
+            fprintf( stderr, "EOF on %d, closing connection.\n", i );
+            close( i );
+            FD_CLR( i, &readSet );
+          }
+          else
+          {
+            //use strtok to terminate message properly.
+            t2 = strtok(buffer, "\r\n");
+            fprintf( stderr, "Server: got message `%s'\n", buffer );
+          }
+        }//else for i == listenSocket
+      }//else for if FD_ISSET
+    }//for( i = 0...FD_SETSIZE );
+  }//while( 1 )
+  return 0;
+}
+
+#endif
+/*
   §[ 4 ] Socket Helper Functions
 */
 /*
-    §[4.1] BOOL CreateSocketInformation( SOCKET s )
+    §[4.1] int CreateSocketInformation( SOCKET s )
   
   Helper function to prepare the SocketInformation structure.
 
@@ -389,10 +566,11 @@ int __cdecl srv( int iPort )
     TRUE (WINAPI 1) if the call was succesful.
     FALSE (WINAPI 0) if there was a memory allocation failure.
 */
-BOOL CreateSocketInformation( SOCKET s )
+int CreateSocketInformation( SOCKET s )
 {
   LPSOCKET_INFORMATION si;
-  
+
+#if defined( RM_WIN32_SYSTEM ) 
   #ifdef RM_DBG_WSA
   printf( "accepted socket number %d.\n", (int)s );
   #endif
@@ -408,7 +586,9 @@ BOOL CreateSocketInformation( SOCKET s )
   #ifdef RM_DBG_WSA
   printf( "GlobalAlloc() for SOCKET_INFORMATION succeeded.\n" );
   #endif
-
+#elif defined( RM_POSIX_SYSTEM )
+  si = (SOCKET_INFORMATION*) calloc( 1, sizeof( SOCKET_INFORMATION) );
+#endif
   //Prepare SocketInfo structure.
   si->Socket = s;
   si->dwBytesToSEND = 0;
@@ -442,8 +622,10 @@ void FreeSocketInformation( DWORD dwIndex )
   LPSOCKET_INFORMATION si = SocketArray[ dwIndex ];
   DWORD i;
 
+  #if defined( RM_WIN32_SYSTEM )
   closesocket( si->Socket );
-  
+  #endif
+
   #ifdef RM_DBG_WSA
   printf( "closing socket number %d.\n", (int) (si->Socket) );
   #endif
@@ -472,12 +654,20 @@ void printAllBuffer()
   printf( "--begin print all buffers--\n" );
   for( i = 0; i < dwTotalSockets; ++i )
   {
+    #if defined( RM_WIN32_SYSTEM )
     printf( "[%d] socket\nread(%d): %s %s\n", 
       i, 
       (int) ( SocketArray[i]->dwBytesRECV ),
       SocketArray[ i ]->DataBufIn.buf, 
       SocketArray[ i ]->sBufferIn 
       );
+    #elif defined( RM_POSIX_SYSTEM )
+    printf( "[%d] socket\nread(%d): %s\n", 
+      i, 
+      (int) ( SocketArray[i]->dwBytesRECV ),
+      SocketArray[ i ]->sBufferIn 
+    );
+    #endif
   }
   printf( "--end print all buffers--\n" );
 } //void printAllBuffer()
@@ -780,7 +970,7 @@ void queueWelcomeMessage( int id )
 /*
   §[ 99] Main
 */
-int __cdecl main( void )
+int main( void )
 {
   printf("§Result = %d\n", srv( DEF_PORT ) );
   return 0;
