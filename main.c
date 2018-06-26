@@ -92,8 +92,8 @@ typedef struct _SOCKET_INFORMATION
 int CreateSocketInformation( SOCKET s );
 void FreeSocketInformation( DWORD dwIndex );
 void printAllBuffer();
-void queueMessage( int id, char * s, DWORD buf_len );
-void broadcastMessage( char* s, DWORD dwBufLen );
+void queueMessage( int id, char * s, int buf_len );
+void broadcastMessage( char* s, int dwBufLen );
 void processIncomingMessage( int id );
 void processIncomingMessageCommand( int id );
 void queueWelcomeMessage( int id );
@@ -709,7 +709,7 @@ void FreeSocketInformation( DWORD dwIndex )
 */
 void printAllBuffer()
 {
-  DWORD i;
+  int i;
   
   printf( "--begin print all buffers--\n" );
   for( i = 0; i < dwTotalSockets; ++i )
@@ -788,7 +788,7 @@ void debugShowIncomingBuffer( int id )
   Returns:
     Nothing.  TODO: Should be altered to return TRUE or FALSE later.
 */
-void queueMessage( int id, char * s, DWORD dwBufLen )
+void queueMessage( int id, char * s, int dwBufLen )
 {
   #ifdef RM_DBG_WSA
   printf( "Queue message on [%d]. BytesToSend before: %d, Buf_len: %d\n",
@@ -808,10 +808,10 @@ void queueMessage( int id, char * s, DWORD dwBufLen )
   {
     printf( "The buffer is full.\n" );
   }
-} //void queueMessage( int id, char * s, DWORD buf_len )
+} //void queueMessage( int id, char * s, int buf_len )
 
 /*
-  §[5.4] void broadcastMessage( char* s, DWORD dwBufLen )
+  §[5.4] void broadcastMessage( char* s, int dwBufLen )
 
   Sends the specified string to all users.  Used to broadcast server events
   as well as actual user messages.
@@ -827,7 +827,7 @@ void queueMessage( int id, char * s, DWORD dwBufLen )
   Returns:
     void
 */
-void broadcastMessage( char* s, DWORD dwBufLen )
+void broadcastMessage( char* s, int dwBufLen )
 {
   int i;
   for( i = 0; i < dwTotalSockets; ++i )
