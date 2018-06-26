@@ -466,13 +466,6 @@ int srv( int port )
 #ifdef RM_DBG_WSA
   printf("Listen is okay!\n");
 #endif
-  /*
-  iNonBlock = 1;
-  if( ioctl( listenSocket, FIONBIO, &iNonBlock ) )
-  {
-    
-  }
-  */
 
   while( 1 )
   {
@@ -498,70 +491,72 @@ int srv( int port )
     printf("Select went...\n");
   #endif
     //service sockets
-    for( i = 0; i < FD_SETSIZE; ++i )
+    if( FD_ISSET( listenSocket, &readSet ) )
     {
-      if( FD_ISSET( i, &readSet ) )
+      printf("Accept\n");
+      //new connection
+      int size;
+      struct sockaddr_in client_name;
+      size = sizeof( client_name );
+      acceptSocket = accept( listenSocket, (struct sockaddr*) &client_name, &size );
+      if( acceptSocket < 0 )
       {
-        printf("%d is in readset\n", i);
-        if( i == listenSocket )
+        perror( "failed to accept socket. ");
+        continue;
+      }
+      else
+      {
+        fprintf( stderr, "Server connect.\n");
+        if( CreateSocketInformation( acceptSocket ) == FALSE )
         {
-          printf("Accept\n");
-          //new connection
-          int size;
-          struct sockaddr_in client_name;
-          size = sizeof( client_name );
-          acceptSocket = accept( listenSocket, (struct sockaddr*) &client_name, &size );
-          if( acceptSocket < 0 )
-          {
-            perror( "failed to accept socket. ");
-            continue;
-          }
-          else
-          {
-            fprintf( stderr, "Server connect.\n");
-            if( CreateSocketInformation( acceptSocket ) == FALSE )
-            {
-              printf( "CreateSocketInformation() failed.\n");
-              return 1;
-            }
+          printf( "CreateSocketInformation() failed.\n");
+          return 1;
+        }
 
-            //add to list
-            FD_SET( acceptSocket, &readSet );
-          }
-        }//if i == listenSocket
+        //add to list
+        FD_SET( acceptSocket, &readSet );
+      }
+    }//if (FD_ISSET (listenSocket, &readSet) )
+
+    //Now iterate over other sockets.
+    for( i = 0; i < dwTotalSockets; ++i )
+    {
+      if( FD_ISSET( SocketArray[i]->Socket, &readSet ) )
+      {
+        char buffer[DATA_BUFSIZE];
+        char* t2;
+        int nbytes;
+        printf("Read\n");
+        memset( buffer, 0, DATA_BUFSIZE );
+        nbytes = read( SocketArray[i]->Socket, buffer, DATA_BUFSIZE );
+
+        if( nbytes < 0 )
+        {
+          fprintf( stderr, "Read Error on Socket %d\n", i );
+          close( SocketArray[i]->Socket );
+          //TODO: Delete the SI
+          //FD_CLR( i->Socket, &readSet );
+          FreeSocketInformation( i );
+        }
+        else if ( nbytes == 0 )
+        {
+          fprintf( stderr, "EOF on %d, closing connection.\n", i );
+          close( SocketArray[i]->Socket );
+          //TODO: Delete the SI.
+          FreeSocketInformation( i );
+        }
         else
         {
-          char buffer[DATA_BUFSIZE];
-          char* t2;
-          int nbytes;
-          printf("Read\n");
-          memset( buffer, 0, DATA_BUFSIZE );
-          nbytes = read( i, buffer, DATA_BUFSIZE );
-
-          if( nbytes < 0 )
-          {
-            fprintf( stderr, "Read Error on Socket %d\n", i );
-            close( i );
-            FD_CLR( i, &readSet );
-          }
-          else if ( nbytes == 0 )
-          {
-            fprintf( stderr, "EOF on %d, closing connection.\n", i );
-            close( i );
-            FD_CLR( i, &readSet );
-          }
-          else
-          {
-            //use strtok to terminate message properly.
-            t2 = strtok(buffer, "\r\n");
-            fprintf( stderr, "Server: got message `%s'\n", buffer );
-          }
-        }//else for i == listenSocket
-      }//else for if FD_ISSET
-    }//for( i = 0...FD_SETSIZE );
+          //use strtok to terminate message properly.
+          t2 = strtok(buffer, "\r\n");
+          fprintf( stderr, "Server: got message `%s'\n", buffer );
+        }
+      }//if( FD_ISSET( i, &readSet ) );
+    }//for( i = 0; i < dwTotalSockets; ++i )
+    continue;
   }//while( 1 )
   return 0;
-}
+}//int srv( int port ) (unix)
 
 #endif
 /*
@@ -638,12 +633,19 @@ void FreeSocketInformation( DWORD dwIndex )
 
   #if defined( RM_WIN32_SYSTEM )
   closesocket( si->Socket );
+  #elif defined( RM_POSIX_SYSTEM )
+  close( si->Socket );
   #endif
 
   #ifdef RM_DBG_WSA
   printf( "closing socket number %d.\n", (int) (si->Socket) );
   #endif
-
+  
+  
+  //GlobalAlloc has reference counting - no free on WIN32.
+  #if defined( RM_POSIX_SYSTEM )
+  free( SocketArray[ dwIndex ] );
+  #endif
   //vacuum socket array.
   for( i = dwIndex; i < dwTotalSockets; ++i )
   {
