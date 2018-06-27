@@ -44,6 +44,9 @@
     §[5.5] void processIncomingMessage( int id )
     §[5.6] void processIncomingMessageCommand( int id )
     §[5.7] void queueWelcomeMessage( int id )
+  §[ 6 ] User Registry Functions
+    §[6.1] BOOL userRegCheck( char* username, char* password )
+    §[6.2] BOOL userRegister( char* username, char* password )
   §[ 99] Main
 */
 
@@ -93,15 +96,18 @@ int CreateSocketInformation( SOCKET s );
 void FreeSocketInformation( DWORD dwIndex );
 void printAllBuffer();
 void queueMessage( int id, char * s, int buf_len );
-void broadcastMessage( char* s, int dwBufLen );
+void broadcastMessage( char * s, int dwBufLen );
 void processIncomingMessage( int id );
 void processIncomingMessageCommand( int id );
 void queueWelcomeMessage( int id );
 
+BOOL userRegCheck( char * username, char * password );
+BOOL userRegister( char * username, char * password );
+
 #if defined( RM_WIN32_SYSTEM )
 DWORD dwTotalSockets = 0;
 #elif defined( RM_POSIX_SYSTEM )
-int dwTotalSockets = 0;
+unsigned int dwTotalSockets = 0;
 #endif
 
 /*
@@ -419,10 +425,8 @@ int srv( int port )
   struct sockaddr_in inetAddr;
   fd_set writeSet;
   fd_set readSet;
-  int i;
+  unsigned int i;
   int k;
-  unsigned long iNonBlock;
-  int dwFlags;
   int dwSendBytes;
   int dwTotal;
 
@@ -493,7 +497,7 @@ int srv( int port )
     if( FD_ISSET( listenSocket, &readSet ) )
     {
       //new connection
-      int size;
+      socklen_t size;
       struct sockaddr_in client_name;
       char outBufAppear[ DATA_BUFSIZE ];
       --dwTotal;
@@ -528,7 +532,6 @@ int srv( int port )
       if( FD_ISSET( SocketInfo->Socket, &readSet ) )
       {
         --dwTotal;
-        char* t2;
         printf("Read\n");
         memset( SocketInfo->sBufferIn, 0, DATA_BUFSIZE );
         SocketInfo->dwBytesRECV = read( SocketInfo->Socket, SocketInfo->sBufferIn, DATA_BUFSIZE );
@@ -732,7 +735,7 @@ void FreeSocketInformation( DWORD dwIndex )
 */
 void printAllBuffer()
 {
-  int i;
+  unsigned int i;
   
   printf( "--begin print all buffers--\n" );
   for( i = 0; i < dwTotalSockets; ++i )
@@ -852,7 +855,7 @@ void queueMessage( int id, char * s, int dwBufLen )
 */
 void broadcastMessage( char* s, int dwBufLen )
 {
-  int i;
+  unsigned int i;
   for( i = 0; i < dwTotalSockets; ++i )
   {
     queueMessage( i, s, dwBufLen );
@@ -886,7 +889,6 @@ void broadcastMessage( char* s, int dwBufLen )
 
 void processIncomingMessage( int id )
 {
-  int i, l;
   char * ptr;
   char outBuf[ DATA_BUFSIZE ];
   #ifdef RM_DBG_WSA
@@ -950,6 +952,7 @@ void processIncomingMessageCommand( int id )
   //of a valid the command.  Also provides shortcuts. 
   if( SocketArray[ id ]->sBufferIn[ 1 ] == 'n' )
   { 
+    BOOL userRegCheckResult = FALSE;
     i = 0;
     //use strtok to get the second parameter (name)
     ptr = strtok( SocketArray[ id ]->sBufferIn, " \r\n\0" );    
@@ -964,23 +967,33 @@ void processIncomingMessageCommand( int id )
     if( i == 2 )
     {
       //There is a password provided
-      //TODO: Check if the name is registered with the password specified.
+      char emptyString[4];
+      snprintf( emptyString, 4, "%s", "");
+      userRegCheckResult = userRegCheck( ptr2, emptyString );
     }
     else
     {
-      //TODO: Check if the name is registered and provide "" for the password.
+      userRegCheckResult = userRegCheck( ptr2, ptr );
     }
-    //borrow outBuf to send a broadcast message.
-    snprintf( outBuf, sizeof( outBuf ), 
-            "User [%s] is now known as [%s]!\r\n",
-            SocketArray[ id ]->username,
-            ptr2
-            );
-    broadcastMessage( outBuf, strlen( outBuf ) );
-    
-    snprintf( SocketArray[ id ]->username, sizeof( SocketArray[ id ]->username ), "%s", ptr2 );
-    snprintf( outBuf, sizeof( outBuf ), "Your nickname is now '%s' \r\n", ptr2 );
-  }
+
+    if( userRegCheckResult == TRUE )
+    {
+      //borrow outBuf to send a broadcast message.
+      snprintf( outBuf, sizeof( outBuf ), 
+              "User [%s] is now known as [%s]!\r\n",
+              SocketArray[ id ]->username,
+              ptr2
+              );
+      broadcastMessage( outBuf, strlen( outBuf ) );
+      
+      snprintf( SocketArray[ id ]->username, sizeof( SocketArray[ id ]->username ), "%s", ptr2 );
+      snprintf( outBuf, sizeof( outBuf ), "Your nickname is now '%s' \r\n", ptr2 );
+    }
+    else
+    {
+      snprintf( outBuf, sizeof( outBuf ), "That username cannot be used.\r\n" );
+    }
+  }//nick command
   else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'r' )
   {
     char * ptr2; 
@@ -994,10 +1007,33 @@ void processIncomingMessageCommand( int id )
       ptr = strtok ( NULL, " \r\n\0" );
       ++i;
     }
-    //TODO: Call Register Function
-    printf(" Username: '%s' Password: '%s' ", ptr2, ptr );
-    snprintf( outBuf, sizeof( outBuf ), "register is not yet implemented.\r\n" );
-  }
+  
+    if( i == 2 )
+    {
+      //Check to see if the name is not registered.
+      if( userRegCheck( ptr2, ptr ) == TRUE )
+      {
+        //If it's not registered, we can register it.
+        if( userRegister( ptr2, ptr ) == TRUE )
+        {
+          printf(" Username: '%s' Password: '%s' ", ptr2, ptr );
+          snprintf( outBuf, sizeof( outBuf ), "Username is now registered.\r\n" );
+        }
+        else
+        {
+          snprintf( outBuf, sizeof( outBuf ), "Username registration failed.\r\n" );
+        }
+      }//if( userRegCheck( ptr2, ptr ) == FALSE )
+      else
+      {
+        snprintf( outBuf, sizeof( outBuf ), "Username already registered.\r\n" );
+      }
+    }
+    else
+    {
+      snprintf( outBuf, sizeof( outBuf ), "Invalid number of parameters for register.\r\n" );
+    }
+  }//register command
   else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'w' )
   {
     queueWelcomeMessage( id );
@@ -1030,7 +1066,7 @@ void processIncomingMessageCommand( int id )
 
 void queueWelcomeMessage( int id )
 {
-  int i;
+  unsigned int i;
   char buf[ DATA_BUFSIZE ];
   snprintf( buf, sizeof( buf ), 
     "Welcome to chat!  You are currently known as \"%s\". %i users are online:\r\n[",
@@ -1050,10 +1086,56 @@ printf("Welcome:$$%s$$\n", buf );
 } //void queueWelcomeMessage( int id )
 
 /*
+  §[ 6 ] User Registry Functions
+*/
+/*
+  §[6.1] BOOL userRegCheck( char* username, char* password )
+
+  Returns TRUE if the username is allowed to be used.
+
+  That is the case if either
+  -The username is not in the database (password is ignored).
+  -The username is in the database, and the password matches the
+    specified password.
+  TODO:
+  -and the username does not begin with "guest", as "guest###"
+    is reserved.
+
+  Parameters:
+    char * username
+      Null terminated string representing the username
+    char * password
+      Null terminated string representing the password
+
+  Return value:
+    TRUE (1) if the username is okay to use
+    FALSE (0) if the username is not okay to use.
+*/
+BOOL userRegCheck( char* username, char* password )
+{
+  printf("userRegCheck for \"%s\" and \"%s\".\n", username, password);
+  return FALSE;
+}//BOOL userRegCheck( char* username, char* password )
+
+/*
+    §[6.2] BOOL userRegister( char* username, char* password )
+
+*/
+BOOL userRegister( char* username, char* password )
+{
+  printf("userRegister for \"%s\" and \"%s\".\n", username, password);
+  //TODO: Save user and password file
+
+  return FALSE;
+}//BOOL userRegister( char* username, char* password )
+
+/*
   §[ 99] Main
 */
 int main( void )
 {
+  //TODO: Load user and password file
+
   printf("§Result = %d\n", srv( DEF_PORT ) );
   return 0;
 }
