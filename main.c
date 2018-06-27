@@ -371,7 +371,8 @@ int __cdecl srv( int iPort )
       WSABUF DataBufOut;
       DataBufOut.buf = SocketInfo->sBufferSend;
       //change this to force tiny packets:
-      //DataBufOut.len = ( SocketInfo->dwBytesToSEND > 10 )? 10 :SocketInfo->dwBytesToSEND;
+      //DataBufOut.len 
+      //= ( SocketInfo->dwBytesToSEND > 10 )? 10 :SocketInfo->dwBytesToSEND;
       DataBufOut.len = SocketInfo->dwBytesToSEND;
       dwSendBytes = 0;
 
@@ -457,7 +458,7 @@ int srv( int port )
   inetAddr.sin_addr.s_addr = htonl( INADDR_ANY );
   inetAddr.sin_port = htons( port );
 
-  if( bind( listenSocket, (struct sockaddr *) &inetAddr, sizeof (inetAddr)) < 0 )
+  if( bind( listenSocket, (struct sockaddr*) &inetAddr, sizeof (inetAddr)) < 0)
   {
     perror( "bind failed on listening socket.\n" );
     return 1;
@@ -515,7 +516,8 @@ int srv( int port )
       char outBufAppear[ DATA_BUFSIZE ];
       --dwTotal;
       size = sizeof( client_name );
-      acceptSocket = accept( listenSocket, (struct sockaddr*) &client_name, &size );
+      acceptSocket = 
+        accept( listenSocket, (struct sockaddr*) &client_name, &size );
       if( acceptSocket < 0 )
       {
         perror( "failed to accept socket." );
@@ -546,7 +548,8 @@ int srv( int port )
       {
         --dwTotal;
         memset( SocketInfo->sBufferIn, 0, DATA_BUFSIZE );
-        SocketInfo->dwBytesRECV = read( SocketInfo->Socket, SocketInfo->sBufferIn, DATA_BUFSIZE );
+        SocketInfo->dwBytesRECV = 
+          read( SocketInfo->Socket, SocketInfo->sBufferIn, DATA_BUFSIZE );
 
         if( SocketInfo->dwBytesRECV < 0 )
         {
@@ -613,7 +616,12 @@ int srv( int port )
       if( FD_ISSET( SocketInfo->Socket, &writeSet ) )
       {
         --dwTotal;
-        if( ( dwSendBytes = send( SocketInfo->Socket, SocketInfo->sBufferSend, SocketInfo->dwBytesToSEND, 0 ) ) == -1 )
+        if( -1 == ( dwSendBytes = 
+                  send( SocketInfo->Socket, 
+                        SocketInfo->sBufferSend, 
+                        SocketInfo->dwBytesToSEND,
+                         0)
+                  ))
         {
           //failure
           printf("send on socket for channel %d failed.\n", i );
@@ -691,7 +699,8 @@ int CreateSocketInformation( SOCKET s )
   si->dwBytesToSEND = 0;
   si->dwBytesRECV = 0;
   si->dwIncomingMessageLength = 0;
-  snprintf( si->username, sizeof( si->username), "guest%03d", dwTotalSockets );
+  snprintf( si->username, sizeof( si->username), 
+            "guest%03d", dwTotalSockets );
   snprintf( si->room, sizeof( si->room), "#global" );
 
   SocketArray[ dwTotalSockets ] = si;
@@ -726,7 +735,8 @@ void FreeSocketInformation( DWORD dwIndex )
   #endif
 
   #ifdef RM_DBG_WSA
-  printf( "closing socket number %d (Index: %d).\n", (int) (si->Socket), (int) dwIndex );
+  printf( "closing socket number %d (Index: %d).\n",
+           (int) (si->Socket), (int) dwIndex );
   #endif
   
   
@@ -1004,12 +1014,19 @@ void processIncomingMessageCommand( int id )
               );
       broadcastMessage( outBuf, strlen( outBuf ) );
       
-      snprintf( SocketArray[ id ]->username, sizeof( SocketArray[ id ]->username ), "%s", ptr2 );
-      snprintf( outBuf, sizeof( outBuf ), "Your nickname is now '%s' \r\n", ptr2 );
+      snprintf( 
+        SocketArray[ id ]->username,
+        sizeof( SocketArray[ id ]->username ),
+        "%s",
+        ptr2
+        );
+      snprintf( outBuf, sizeof( outBuf ), 
+                "Your nickname is now '%s' \r\n", ptr2 );
     }
     else
     {
-      snprintf( outBuf, sizeof( outBuf ), "That username cannot be used.\r\n" );
+      snprintf( outBuf, sizeof( outBuf ), 
+                "That username cannot be used.\r\n" );
     }
   }//nick command
   else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'r' )
@@ -1035,31 +1052,45 @@ void processIncomingMessageCommand( int id )
         if( userRegister( ptr2, ptr ) == TRUE )
         {
           printf(" Username: '%s' Password: '%s' ", ptr2, ptr );
-          snprintf( outBuf, sizeof( outBuf ), "Username is now registered.\r\n" );
+          snprintf( outBuf, sizeof( outBuf ), 
+                    "Username is now registered.\r\n" );
         }
         else
         {
-          snprintf( outBuf, sizeof( outBuf ), "Username registration failed.\r\n" );
+          snprintf( outBuf, sizeof( outBuf ), 
+                    "Username registration failed.\r\n" );
         }
       }//if( userRegCheck( ptr2, ptr ) == FALSE )
       else
       {
-        snprintf( outBuf, sizeof( outBuf ), "Username already registered.\r\n" );
+        snprintf( outBuf, sizeof( outBuf ), 
+                  "Username already registered.\r\n" );
       }
     }
     else
     {
-      snprintf( outBuf, sizeof( outBuf ), "Invalid number of parameters for register.\r\n" );
+      snprintf( outBuf, sizeof( outBuf ), 
+                "Invalid number of parameters for register.\r\n" );
     }
   }//register command
   else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'w' )
   {
     queueWelcomeMessage( id );
-    snprintf( outBuf, sizeof( outBuf ), "Welcome message was requested by /welcome.\r\n");
+    snprintf( outBuf, sizeof( outBuf ), 
+              "Welcome message was requested by /welcome.\r\n");
   }
   else if( SocketArray[ id ]->sBufferIn[ 1 ] == 'h' )
   {
-    snprintf( outBuf, sizeof( outBuf ), "The following commands are available:\r\n/help\r\n\tThis message.\r\n/nick <new_name> [<password>]\r\n\tChange your name.  Provide password if registered.\r\n/register <password>\r\n\tSave your name.  You cannot save a name beginning with \"guest\".\r\n/welcome\r\n\tSends you the welcome message.  See who is online, and your name.\r\n");
+    snprintf( outBuf, sizeof( outBuf ), 
+    "The following commands are available:\r\n"
+    "help\r\n\tThis message.\r\n"
+    "/nick <new_name> [<password>]\r\n"
+    "\tChange your name. Provide password if registered.\r\n"
+    "/register <password>\r\n"
+    "\tSave your name.  You cannot save a name beginning with \"guest\".\r\n"
+    "/welcome\r\n"
+    "\tSends you the welcome message. Shows who is online, and your name.\r\n"
+    );
   }
   else
   {
@@ -1087,7 +1118,8 @@ void queueWelcomeMessage( int id )
   unsigned int i;
   char buf[ DATA_BUFSIZE ];
   snprintf( buf, sizeof( buf ), 
-    "Welcome to chat!  You are currently known as \"%s\". %i users are online:\r\n[",
+    "Welcome to chat!  You are currently known as \"%s\"."
+    "%i users are online:\r\n[",
     SocketArray[id]->username, dwTotalSockets 
     );
   for( i = 0; i < dwTotalSockets; ++i )
