@@ -36,8 +36,9 @@
   §[ 1 ] Structures
     §[1.1] SOCKET_INFORMATION
   §[ 2 ] Prototypes and Global Variables
-  §[ 3A] Socket Server Function - Windows
-  §[ 3B] Socket Server Function - POSIX
+  §[ 3 ] Socket Server Function
+    §[3.1] Socket Server Function - Windows
+    §[3.2] Socket Server Function - POSIX
   §[ 4 ] Socket Helper Functions
     §[4.1] BOOL CreateSocketInformation( SOCKET s )
     §[4.2] void FreeSocketInformation( DWORD dwIndex )
@@ -129,7 +130,10 @@ SOCKET_INFORMATION* SocketArray[FD_SETSIZE];
   std::map<std::string, std::string> dRegisteredUsers;
 #endif
 /*
-  §[ 3A] Socket Server Function -- Windows
+  §[ 3 ] Socket Server Function
+*/
+/*
+    §[3.1] Socket Server Function -- Windows
 */
 #if defined( RM_WIN32_SYSTEM )
 int __cdecl srv( int iPort )
@@ -423,7 +427,7 @@ int __cdecl srv( int iPort )
 }//int __cdecl srv( int iPort )
 
 /*
-  §[ 3B] Socket Server Function -- POSIX
+    §[3.2] Socket Server Function -- POSIX
 */
 #elif defined( RM_POSIX_SYSTEM )
 
@@ -447,7 +451,7 @@ int srv( int port )
   }
 
 #ifdef RM_DBG_WSA
-  printf("socket create is okay!\n");
+  printf( "socket create is okay!\n" );
 #endif
   inetAddr.sin_family = AF_INET;
   inetAddr.sin_addr.s_addr = htonl( INADDR_ANY );
@@ -459,17 +463,17 @@ int srv( int port )
     return 1;
   }
 #ifdef RM_DBG_WSA
-  printf("bind is okay!\n");
+  printf( "bind is okay!\n" );
 #endif
  
   if( listen( listenSocket, MAX_CONN ) < 0 )
   {
-    perror( "Listen failed.\n");
+    perror( "Listen failed.\n" );
     return 1;
   }
 
 #ifdef RM_DBG_WSA
-  printf("Listen is okay!\n");
+  printf( "Listen is okay!\n" );
 #endif
 
   while( 1 )
@@ -492,7 +496,7 @@ int srv( int port )
       FD_SET( SocketArray[ i ]->Socket, &readSet );
     }
 #ifdef RM_DBG_WSA
-    printf("Select wait...\n");
+    printf( "Select wait...\n" );
 #endif
     if( (dwTotal = select( FD_SETSIZE, &readSet, &writeSet, NULL, NULL )) < 0 )
     {
@@ -500,7 +504,7 @@ int srv( int port )
       return 1;
     }
   #ifdef RM_DBG_WSA
-    printf("Select went...\n");
+    printf( "Select went...\n" );
   #endif
     //service sockets
     if( FD_ISSET( listenSocket, &readSet ) )
@@ -514,14 +518,14 @@ int srv( int port )
       acceptSocket = accept( listenSocket, (struct sockaddr*) &client_name, &size );
       if( acceptSocket < 0 )
       {
-        perror( "failed to accept socket. ");
+        perror( "failed to accept socket." );
       }
       else
       {
-        fprintf( stderr, "Server connect.\n");
+        fprintf( stderr, "Server connect.\n" );
         if( CreateSocketInformation( acceptSocket ) == FALSE )
         {
-          printf( "CreateSocketInformation() failed.\n");
+          printf( "CreateSocketInformation() failed.\n" );
           return 1; //this is a critical failure.
         }
         
@@ -530,7 +534,7 @@ int srv( int port )
                   SocketArray[ dwTotalSockets-1 ]->username );
         broadcastMessage( outBufAppear, strlen( outBufAppear ) );
         //Make welcome message
-        queueWelcomeMessage( dwTotalSockets-1 );
+        queueWelcomeMessage( dwTotalSockets - 1 );
       }//else for acceptSocket failed.
     }//if (FD_ISSET (listenSocket, &readSet) )
 
@@ -541,7 +545,6 @@ int srv( int port )
       if( FD_ISSET( SocketInfo->Socket, &readSet ) )
       {
         --dwTotal;
-        printf("Read\n");
         memset( SocketInfo->sBufferIn, 0, DATA_BUFSIZE );
         SocketInfo->dwBytesRECV = read( SocketInfo->Socket, SocketInfo->sBufferIn, DATA_BUFSIZE );
 
@@ -549,24 +552,30 @@ int srv( int port )
         {
           char outBufLeave[ DATA_BUFSIZE ];
           fprintf( stderr, "Read Error on Socket %d\n", i );
-          //close( SocketInfo->Socket );
           snprintf( outBufLeave, sizeof( outBufLeave ), 
                     "[%s] has left!\r\n",
                     SocketInfo->username );
           FreeSocketInformation( i );
+          #ifdef RM_DBG_WSA
+          printf( "Freed socket.\n" );
+          #endif
           broadcastMessage( outBufLeave, strlen( outBufLeave ) );
+          continue;
         }
         else if ( SocketInfo->dwBytesRECV == 0 )
         {
           char outBufLeave[ DATA_BUFSIZE ];
           //if zero bytes, the peer closed the connection.
           fprintf( stderr, "EOF on %d, closing connection.\n", i );
-          //close( SocketInfo->Socket );
           snprintf( outBufLeave, sizeof( outBufLeave ), 
                     "[%s] has left!\r\n",
                     SocketInfo->username );
           FreeSocketInformation( i );
+          #ifdef RM_DBG_WSA
+          printf( "Freed socket.\n" );
+          #endif
           broadcastMessage( outBufLeave, strlen( outBufLeave ) );
+          continue;
         }
         else
         {
@@ -717,7 +726,7 @@ void FreeSocketInformation( DWORD dwIndex )
   #endif
 
   #ifdef RM_DBG_WSA
-  printf( "closing socket number %d.\n", (int) (si->Socket) );
+  printf( "closing socket number %d (Index: %d).\n", (int) (si->Socket), (int) dwIndex );
   #endif
   
   
@@ -1118,14 +1127,19 @@ printf("Welcome:$$%s$$\n", buf );
 
   Return value:
     TRUE (1) if the username is okay to use
-    FALSE (0) if the username is not okay to use.
+    FALSE (0) if the username is not okay to use, or if password is 
+      NULL.
 */
 BOOL userRegCheck( char* username, char* password )
 {
   printf("userRegCheck for \"%s\" and \"%s\".\n", username, password);
   #ifdef __cplusplus
+    if( password == NULL )
+    {
+      return FALSE;
+    }
     std::string username_string = std::string( username );
-    if( dRegisteredUsers.find( username ) == dRegisteredUsers.end() )
+    if( dRegisteredUsers.find( username_string ) == dRegisteredUsers.end() )
     {
       //not in list, username use is allowed
       return TRUE;
@@ -1133,7 +1147,7 @@ BOOL userRegCheck( char* username, char* password )
     else
     {
       //if in the list, verify that the password matches.
-      if( dRegisteredUsers[ username ] == std::string( password ) )
+      if( dRegisteredUsers[ username_string ] == std::string( password ) )
       {
         return TRUE;
       }
