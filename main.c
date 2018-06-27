@@ -20,6 +20,11 @@
 #endif
 #include <stdio.h>
 
+#ifdef __cplusplus
+  #include <map>
+  #include <string>
+#endif
+
 #define DEF_PORT 27000
 #define DATA_BUFSIZE 8192
 #define MAX_CONN 128
@@ -117,7 +122,11 @@ unsigned int dwTotalSockets = 0;
 #if defined( RM_WIN32_SYSTEM )
 LPSOCKET_INFORMATION SocketArray[FD_SETSIZE];
 #elif defined( RM_POSIX_SYSTEM )
-  SOCKET_INFORMATION* SocketArray[FD_SETSIZE];
+SOCKET_INFORMATION* SocketArray[FD_SETSIZE];
+#endif
+
+#ifdef __cplusplus
+  std::map<std::string, std::string> dRegisteredUsers;
 #endif
 /*
   §[ 3A] Socket Server Function -- Windows
@@ -964,16 +973,16 @@ void processIncomingMessageCommand( int id )
       ++i;
     }
 
-    if( i == 2 )
+    if( ptr != NULL )
     {
       //There is a password provided
-      char emptyString[4];
-      snprintf( emptyString, 4, "%s", "");
-      userRegCheckResult = userRegCheck( ptr2, emptyString );
+      userRegCheckResult = userRegCheck( ptr2, ptr );
     }
     else
     {
-      userRegCheckResult = userRegCheck( ptr2, ptr );
+      char emptyString[4];
+      snprintf( emptyString, 4, "%s", "");
+      userRegCheckResult = userRegCheck( ptr2, emptyString );
     }
 
     if( userRegCheckResult == TRUE )
@@ -1114,18 +1123,60 @@ printf("Welcome:$$%s$$\n", buf );
 BOOL userRegCheck( char* username, char* password )
 {
   printf("userRegCheck for \"%s\" and \"%s\".\n", username, password);
+  #ifdef __cplusplus
+    std::string username_string = std::string( username );
+    if( dRegisteredUsers.find( username ) == dRegisteredUsers.end() )
+    {
+      //not in list, username use is allowed
+      return TRUE;
+    }
+    else
+    {
+      //if in the list, verify that the password matches.
+      if( dRegisteredUsers[ username ] == std::string( password ) )
+      {
+        return TRUE;
+      }
+      else
+      {
+        return FALSE;
+      }
+    }
+  #else
+    return TRUE;
+  #endif
+
   return FALSE;
 }//BOOL userRegCheck( char* username, char* password )
 
 /*
     §[6.2] BOOL userRegister( char* username, char* password )
 
-*/
-BOOL userRegister( char* username, char* password )
-{
-  printf("userRegister for \"%s\" and \"%s\".\n", username, password);
-  //TODO: Save user and password file
+    Registers or updates a user in the registration database.
 
+    If compiled in C++ the database is a map.
+
+    If compiled in C, this function is disabled and the function
+    returns false.
+
+    Parameters:
+      char * username
+        the username to be registered.
+      char * password
+        the desired password for that username.
+
+    Return:
+      TRUE (1) if the function worked (C++)
+      FALSE (0) if the function failed (compiled in C)
+*/
+BOOL userRegister( char * username, char * password )
+{
+  printf( "userRegister for \"%s\" and \"%s\".\n", username, password );
+  //TODO: Save user and password file
+  #ifdef __cplusplus
+  dRegisteredUsers[ std::string( username ) ] = std::string( password );
+  return TRUE;
+  #endif
   return FALSE;
 }//BOOL userRegister( char* username, char* password )
 
