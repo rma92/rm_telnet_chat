@@ -4,7 +4,7 @@ I was asked some time ago to produce a demonstration application that utilizes t
 
 I have provided a single threaded telnet chat server.  This implementation should run on any version of Windows > 5.0 (Windows 2000), and also on POSIX systems.
 
-This should compile cleanly with a C++ compiler.  The application can also be compiled with a C compiler, and basic functionality will work, but persistant storage of usernames will not work (as this is implemented using an std Map for simplicity, as it was uninteresting for the original demo).
+This should compile cleanly with a C++ compiler.  The application can also be compiled with a C compiler, and basic functionality will work, but protecting usernames with a password will not work.
 
 ### Functionality
 
@@ -16,7 +16,11 @@ All connections listen for something to read.  Sockets only listen for write act
 
 Data for each socket, as well as application level data such as usernames, are stored in the SOCKET_INFORMATION structure.
 
-If the application is compiled with a C++ compiler, storage of a username and password list across server runs is supported.
+If the application is compiled with a C++ compiler, storage of a username and password list to allow users to protect a username with a password is supported.
+
+### Future improvements
+* Saving the Map of usernames and passwords in a file should be implemented so that the username list will exist across server restarts.  (usernames persist across client reconnects.)  This was not relevant to the demo the code was written for, so was not implemented.
+* It would be nice to reimplement the storage of the usertable in C.  This was not implemented in C as it was not relevant to the original demo, nor particularly interesting to add to the demo, as it wasn't a demonstration of implementation of data structures in C, but rather a demonstration of server programming. 
 
 ### Code documentation
 
