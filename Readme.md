@@ -10,7 +10,7 @@ This should compile cleanly with a C++ compiler.  The application can also be co
 
 Upon connection, a welcome message is provided to users (see `queueWelcomeMessage()` ).  All users see messages from all users.   
 
-The main network processing is in a single long function (it's difficult to split this into smaller functions).  Most other activity that gets called a lot (e.g. message queuing) is in additional functions. The basic structure -- the main function calls the `srv()` function and provides the port number on which to listen.  This function then sets up the WinSock/socket listener, sets the socket to non-blocking, and begins the select loop (the infinite while loop).
+The main network processing is in a single long function (it's difficult to split this into smaller functions).  Most other activity that gets called often (e.g. message queuing) is in additional functions. The basic structure -- the `main` function calls the `srv()` function and provides the port number on which to listen.  This function then sets up the WinSock/socket listener, sets the socket to non-blocking, and begins the select loop (the infinite while loop).
 
 All connections listen for something to read.  Sockets only listen for write activity when there is a message to be sent.   
 
@@ -24,6 +24,6 @@ If the application is compiled with a C++ compiler, storage of a username and pa
 
 ### Code documentation
 
-The code is well documented with comments, and explanations about each function.
+The code is well-documented with comments, and explanations about each function.
 
 Use the table of contents at the top of main.c to search for a particular function in question, by string searching for the section number in the brackets, e.g. "`[ 99]`" (within the quotes) to jump to the main function.
